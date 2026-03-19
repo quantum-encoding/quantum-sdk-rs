@@ -67,6 +67,10 @@ impl ClientBuilder {
 
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header.clone());
+        // Also send X-API-Key for proxies that claim the Authorization header (e.g. Cloudflare -> Cloud Run IAM).
+        if let Ok(v) = HeaderValue::from_str(&self.api_key) {
+            headers.insert("X-API-Key", v);
+        }
 
         let http = reqwest::Client::builder()
             .default_headers(headers)
@@ -116,8 +120,13 @@ impl Client {
         ClientBuilder::new(api_key)
     }
 
+    /// Returns the base URL for this client.
+    pub(crate) fn base_url(&self) -> &str {
+        &self.inner.base_url
+    }
+
     /// Sends a JSON POST request and deserializes the response.
-    pub(crate) async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
+    pub async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
         body: &Req,
@@ -143,7 +152,7 @@ impl Client {
     }
 
     /// Sends a GET request and deserializes the response.
-    pub(crate) async fn get_json<Resp: DeserializeOwned>(
+    pub async fn get_json<Resp: DeserializeOwned>(
         &self,
         path: &str,
     ) -> Result<(Resp, ResponseMeta)> {
@@ -160,10 +169,47 @@ impl Client {
         Ok((result, meta))
     }
 
+    /// Sends a DELETE request and deserializes the response.
+    pub async fn delete_json<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<(Resp, ResponseMeta)> {
+        let url = format!("{}{}", self.inner.base_url, path);
+        let resp = self.inner.http.delete(&url).send().await?;
+
+        let meta = parse_response_meta(&resp);
+
+        if !resp.status().is_success() {
+            return Err(parse_api_error(resp, &meta.request_id).await);
+        }
+
+        let result: Resp = resp.json().await?;
+        Ok((result, meta))
+    }
+
+    /// Sends a multipart POST request and deserializes the response.
+    pub async fn post_multipart<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        form: reqwest::multipart::Form,
+    ) -> Result<(Resp, ResponseMeta)> {
+        let url = format!("{}{}", self.inner.base_url, path);
+        let resp = self.inner.http.post(&url).multipart(form).send().await?;
+
+        let meta = parse_response_meta(&resp);
+
+        if !resp.status().is_success() {
+            return Err(parse_api_error(resp, &meta.request_id).await);
+        }
+
+        let result: Resp = resp.json().await?;
+        Ok((result, meta))
+    }
+
     /// Sends a JSON POST request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
-    /// Uses a separate client without timeout — cancellation is via drop.
-    pub(crate) async fn post_stream_raw(
+    /// Uses a separate client without timeout -- cancellation is via drop.
+    pub async fn post_stream_raw(
         &self,
         path: &str,
         body: &impl Serialize,

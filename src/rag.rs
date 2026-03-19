@@ -140,6 +140,23 @@ pub struct SurrealRagResult {
     pub score: f64,
 }
 
+/// A SurrealDB RAG provider.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurrealRagProvider {
+    /// Provider identifier (e.g. "xai", "claude").
+    pub provider: String,
+
+    /// Number of document chunks for this provider.
+    #[serde(default)]
+    pub chunk_count: Option<i64>,
+}
+
+/// Response from listing SurrealDB RAG providers.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurrealRagProvidersResponse {
+    pub providers: Vec<SurrealRagProvider>,
+}
+
 impl Client {
     /// Searches Vertex AI RAG corpora for relevant documentation.
     pub async fn rag_search(&self, req: &RagSearchRequest) -> Result<RagSearchResponse> {
@@ -180,6 +197,14 @@ impl Client {
         if resp.request_id.is_empty() {
             resp.request_id = meta.request_id;
         }
+        Ok(resp)
+    }
+
+    /// Lists available SurrealDB RAG documentation providers.
+    pub async fn surreal_rag_providers(&self) -> Result<SurrealRagProvidersResponse> {
+        let (resp, _meta) = self
+            .get_json::<SurrealRagProvidersResponse>("/qai/v1/rag/surreal/providers")
+            .await?;
         Ok(resp)
     }
 }

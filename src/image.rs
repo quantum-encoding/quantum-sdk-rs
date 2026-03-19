@@ -31,6 +31,14 @@ pub struct ImageRequest {
     /// Image format (e.g. "png", "jpeg", "webp").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
+
+    /// Style preset (e.g. "vivid", "natural"). DALL-E 3 specific.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+
+    /// Background mode (e.g. "auto", "transparent", "opaque"). GPT-Image specific.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
 }
 
 /// Response from image generation.
