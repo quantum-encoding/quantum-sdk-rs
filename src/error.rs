@@ -13,6 +13,8 @@ pub enum Error {
     Http(reqwest::Error),
     /// A serialization or deserialization error occurred.
     Json(serde_json::Error),
+    /// A WebSocket error occurred (realtime sessions).
+    WebSocket(tokio_tungstenite::tungstenite::Error),
 }
 
 impl fmt::Display for Error {
@@ -21,6 +23,7 @@ impl fmt::Display for Error {
             Error::Api(e) => write!(f, "{e}"),
             Error::Http(e) => write!(f, "qai: http error: {e}"),
             Error::Json(e) => write!(f, "qai: json error: {e}"),
+            Error::WebSocket(e) => write!(f, "qai: websocket error: {e}"),
         }
     }
 }
@@ -31,7 +34,14 @@ impl std::error::Error for Error {
             Error::Api(_) => None,
             Error::Http(e) => Some(e),
             Error::Json(e) => Some(e),
+            Error::WebSocket(e) => Some(e),
         }
+    }
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for Error {
+    fn from(err: tokio_tungstenite::tungstenite::Error) -> Self {
+        Error::WebSocket(err)
     }
 }
 

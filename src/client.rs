@@ -125,6 +125,11 @@ impl Client {
         &self.inner.base_url
     }
 
+    /// Returns the auth header value (e.g. "Bearer qai_xxx").
+    pub(crate) fn auth_header(&self) -> &HeaderValue {
+        &self.inner.auth_header
+    }
+
     /// Sends a JSON POST request and deserializes the response.
     pub async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,

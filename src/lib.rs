@@ -36,6 +36,7 @@ pub mod jobs;
 pub mod keys;
 pub mod models;
 pub mod rag;
+pub mod realtime;
 pub mod session;
 pub mod video;
 pub mod voices;
@@ -120,6 +121,9 @@ pub use rag::{
 
 // Model types
 pub use models::{ModelInfo, PricingInfo};
+
+// Realtime voice types
+pub use realtime::{RealtimeConfig, RealtimeEvent, RealtimeReceiver, RealtimeSender};
 
 // Error helpers
 pub use error::{is_auth_error, is_not_found_error, is_rate_limit_error};
