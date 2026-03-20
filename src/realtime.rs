@@ -157,6 +157,14 @@ impl Client {
         };
 
         let url = format!("{ws_base}/qai/v1/realtime");
+
+        // Extract host from the base URL for the Host header
+        let host = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_string();
+
         let auth = self
             .auth_header()
             .to_str()
@@ -168,6 +176,7 @@ impl Client {
 
         let request = Request::builder()
             .uri(&url)
+            .header("Host", &host)
             .header("Authorization", &auth)
             .header("X-API-Key", raw_token)
             .header("Connection", "Upgrade")
@@ -205,19 +214,17 @@ impl Client {
         };
         let receiver = RealtimeReceiver { stream };
 
-        // Send session.update with config
+        // Send session.update with config (xAI Realtime API format)
         let session_update = serde_json::json!({
             "type": "session.update",
             "session": {
                 "voice": config.voice,
                 "instructions": config.instructions,
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_transcription": {
-                    "model": "grok-2-audio",
-                },
-                "turn_detection": {
-                    "type": "server_vad",
+                "turn_detection": { "type": "server_vad" },
+                "input_audio_transcription": { "model": "grok-2-audio" },
+                "audio": {
+                    "input": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
+                    "output": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
                 },
                 "tools": config.tools,
             }
@@ -227,6 +234,140 @@ impl Client {
 
         Ok((sender, receiver))
     }
+}
+
+/// Response from the QAI realtime session endpoint.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct RealtimeSession {
+    /// Ephemeral xAI token for direct WebSocket connection.
+    pub ephemeral_token: String,
+    /// WebSocket URL to connect to (e.g. "wss://api.x.ai/v1/realtime").
+    pub url: String,
+    /// Session ID for billing (pass to realtime/end on disconnect).
+    pub session_id: String,
+}
+
+impl Client {
+    /// Request an ephemeral token from the QAI proxy for direct xAI voice connection.
+    /// Call this before `realtime_connect_direct` to get a scoped token.
+    pub async fn realtime_session(&self) -> Result<RealtimeSession> {
+        let (session, _meta): (RealtimeSession, _) = self
+            .post_json("/qai/v1/realtime/session", &serde_json::json!({}))
+            .await?;
+        Ok(session)
+    }
+
+    /// End a realtime session and finalize billing.
+    pub async fn realtime_end(&self, session_id: &str, duration_seconds: u64) -> Result<()> {
+        let _: (serde_json::Value, _) = self
+            .post_json(
+                "/qai/v1/realtime/end",
+                &serde_json::json!({
+                    "session_id": session_id,
+                    "duration_seconds": duration_seconds,
+                }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Refresh an ephemeral token for long sessions (>4 min).
+    pub async fn realtime_refresh(&self, session_id: &str) -> Result<String> {
+        let (resp, _): (serde_json::Value, _) = self
+            .post_json(
+                "/qai/v1/realtime/refresh",
+                &serde_json::json!({ "session_id": session_id }),
+            )
+            .await?;
+        Ok(resp["ephemeral_token"]
+            .as_str()
+            .unwrap_or("")
+            .to_string())
+    }
+}
+
+/// Opens a realtime voice session directly to xAI (bypassing the proxy).
+///
+/// Use with an ephemeral token from `client.realtime_session()`.
+/// Much lower latency than the proxy path — no extra hop.
+pub async fn realtime_connect_direct(
+    ephemeral_token: &str,
+    config: &RealtimeConfig,
+) -> Result<(RealtimeSender, RealtimeReceiver)> {
+    realtime_connect_direct_to("wss://api.x.ai/v1/realtime", ephemeral_token, config).await
+}
+
+/// Opens a realtime voice session to a specific WebSocket URL.
+pub async fn realtime_connect_direct_to(
+    url: &str,
+    token: &str,
+    config: &RealtimeConfig,
+) -> Result<(RealtimeSender, RealtimeReceiver)> {
+    // Extract host from URL
+    let host = url
+        .trim_start_matches("wss://")
+        .trim_start_matches("ws://")
+        .split('/')
+        .next()
+        .unwrap_or("api.x.ai");
+
+    let request = Request::builder()
+        .uri(url)
+        .header("Host", host)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Version", "13")
+        .header(
+            "Sec-WebSocket-Key",
+            tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+        )
+        .body(())
+        .map_err(|e| Error::Api(ApiError {
+            status_code: 0,
+            code: "websocket_request".into(),
+            message: format!("Failed to build WebSocket request: {e}"),
+            request_id: String::new(),
+        }))?;
+
+    let (ws_stream, _response) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
+    .map_err(|_| Error::Api(ApiError {
+        status_code: 0,
+        code: "timeout".into(),
+        message: "Direct xAI WebSocket connection timed out (10s)".into(),
+        request_id: String::new(),
+    }))?
+    .map_err(Error::WebSocket)?;
+
+    let (sink, stream) = ws_stream.split();
+    let sender = RealtimeSender {
+        sink: tokio::sync::Mutex::new(sink),
+    };
+    let receiver = RealtimeReceiver { stream };
+
+    // Send session.update
+    let session_update = serde_json::json!({
+        "type": "session.update",
+        "session": {
+            "voice": config.voice,
+            "instructions": config.instructions,
+            "turn_detection": { "type": "server_vad" },
+            "input_audio_transcription": { "model": "grok-2-audio" },
+            "audio": {
+                "input": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
+                "output": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
+            },
+            "tools": config.tools,
+        }
+    });
+
+    sender.send_raw(&serde_json::to_string(&session_update)?).await?;
+
+    Ok((sender, receiver))
 }
 
 // ── RealtimeSender ──

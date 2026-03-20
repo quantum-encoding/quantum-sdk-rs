@@ -123,7 +123,10 @@ pub use rag::{
 pub use models::{ModelInfo, PricingInfo};
 
 // Realtime voice types
-pub use realtime::{RealtimeConfig, RealtimeEvent, RealtimeReceiver, RealtimeSender};
+pub use realtime::{
+    realtime_connect_direct, realtime_connect_direct_to, RealtimeConfig, RealtimeEvent,
+    RealtimeReceiver, RealtimeSender, RealtimeSession,
+};
 
 // Error helpers
 pub use error::{is_auth_error, is_not_found_error, is_rate_limit_error};
