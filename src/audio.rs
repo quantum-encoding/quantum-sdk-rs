@@ -399,9 +399,11 @@ pub struct AlignResponse {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct VoiceDesignRequest {
     /// Text description of the desired voice.
+    #[serde(rename = "voice_description")]
     pub description: String,
 
     /// Sample text to speak with the designed voice.
+    #[serde(rename = "sample_text")]
     pub text: String,
 
     /// Output audio format.
