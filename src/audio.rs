@@ -105,9 +105,11 @@ pub struct MusicRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MusicResponse {
     /// Generated music clips.
+    #[serde(default)]
     pub audio_clips: Vec<MusicClip>,
 
     /// Model that generated the music.
+    #[serde(default)]
     pub model: String,
 
     /// Total cost in ticks.
@@ -126,12 +128,15 @@ pub struct MusicClip {
     pub base64: String,
 
     /// Audio format (e.g. "mp3", "wav").
+    #[serde(default)]
     pub format: String,
 
     /// Audio file size.
+    #[serde(default)]
     pub size_bytes: i64,
 
     /// Clip index within the batch.
+    #[serde(default)]
     pub index: i32,
 }
 
