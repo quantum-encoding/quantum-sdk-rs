@@ -152,7 +152,13 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let result: Resp = resp.json().await?;
+        // Read body text first for better error messages on parse failure
+        let body_text = resp.text().await?;
+        let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
+            let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+            eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
+            e
+        })?;
         Ok((result, meta))
     }
 
@@ -170,7 +176,12 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let result: Resp = resp.json().await?;
+        let body_text = resp.text().await?;
+        let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
+            let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+            eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
+            e
+        })?;
         Ok((result, meta))
     }
 

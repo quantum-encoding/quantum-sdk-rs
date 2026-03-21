@@ -469,19 +469,27 @@ pub struct ElevenMusicRequest {
     pub edit_instruction: Option<String>,
 }
 
-/// Response from advanced music generation.
+/// A single music clip from advanced generation.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ElevenMusicResponse {
+pub struct ElevenMusicClip {
     /// Base64-encoded audio data.
-    pub audio_base64: String,
+    #[serde(default)]
+    pub base64: String,
     /// Audio format (e.g. "mp3").
+    #[serde(default)]
     pub format: String,
     /// File size in bytes.
     #[serde(default)]
-    pub size_bytes: i64,
-    /// Unique generation identifier (can be used as edit_reference_id).
+    pub size: i64,
+}
+
+/// Response from advanced music generation.
+/// Backend returns: { clips: [...], model, cost_ticks, request_id }
+#[derive(Debug, Clone, Deserialize)]
+pub struct ElevenMusicResponse {
+    /// Generated music clips.
     #[serde(default)]
-    pub generation_id: String,
+    pub clips: Vec<ElevenMusicClip>,
     /// Model used.
     #[serde(default)]
     pub model: String,
