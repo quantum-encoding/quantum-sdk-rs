@@ -78,12 +78,16 @@ pub struct UsageQuery {
 
 /// Pricing entry from the pricing table.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
 pub struct PricingEntry {
+    #[serde(default)]
     pub provider: String,
+    #[serde(default)]
     pub model: String,
+    #[serde(default)]
     pub display_name: String,
+    #[serde(default)]
     pub input_per_million: f64,
+    #[serde(default)]
     pub output_per_million: f64,
     #[serde(default)]
     pub cached_per_million: f64,
