@@ -45,9 +45,11 @@ pub struct ImageRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ImageResponse {
     /// Generated images.
+    #[serde(default)]
     pub images: Vec<GeneratedImage>,
 
     /// Model that generated the images.
+    #[serde(default)]
     pub model: String,
 
     /// Total cost in ticks.
