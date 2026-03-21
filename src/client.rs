@@ -7,6 +7,16 @@ use serde::Serialize;
 
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
 
+/// Max retries for transient errors (502, 503, 429).
+const MAX_RETRIES: u32 = 3;
+/// Initial backoff delay.
+const INITIAL_BACKOFF_MS: u64 = 500;
+
+/// Check if a status code is retryable.
+fn is_retryable(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 502 | 503 | 504)
+}
+
 /// The default Quantum AI API base URL.
 pub const DEFAULT_BASE_URL: &str = "https://api.quantumencoding.ai";
 
@@ -137,29 +147,53 @@ impl Client {
         body: &Req,
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-        let resp = self
-            .inner
-            .http
-            .post(&url)
-            .header(CONTENT_TYPE, "application/json")
-            .json(body)
-            .send()
-            .await?;
+        let body_bytes = serde_json::to_vec(body)?;
 
-        let meta = parse_response_meta(&resp);
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                eprintln!("[sdk] Retry {attempt}/{MAX_RETRIES} for POST {path} in {delay}ms");
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
 
-        if !resp.status().is_success() {
+            let resp = self
+                .inner
+                .http
+                .post(&url)
+                .header(CONTENT_TYPE, "application/json")
+                .body(body_bytes.clone())
+                .send()
+                .await?;
+
+            let status = resp.status();
+            let meta = parse_response_meta(&resp);
+
+            if status.is_success() {
+                let body_text = resp.text().await?;
+                let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
+                    let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+                    eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
+                    e
+                })?;
+                return Ok((result, meta));
+            }
+
+            if is_retryable(status) && attempt < MAX_RETRIES {
+                eprintln!("[sdk] POST {path} returned {status}, will retry");
+                last_err = Some(parse_api_error(resp, &meta.request_id).await);
+                continue;
+            }
+
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        // Read body text first for better error messages on parse failure
-        let body_text = resp.text().await?;
-        let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-            let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
-            eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
-            e
-        })?;
-        Ok((result, meta))
+        Err(last_err.unwrap_or_else(|| Error::Api(ApiError {
+            status_code: 502,
+            code: "retry_exhausted".into(),
+            message: format!("max retries ({MAX_RETRIES}) exceeded"),
+            request_id: String::new(),
+        })))
     }
 
     /// Sends a GET request and deserializes the response.
@@ -168,21 +202,44 @@ impl Client {
         path: &str,
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-        let resp = self.inner.http.get(&url).send().await?;
 
-        let meta = parse_response_meta(&resp);
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
+                eprintln!("[sdk] Retry {attempt}/{MAX_RETRIES} for GET {path} in {delay}ms");
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
 
-        if !resp.status().is_success() {
+            let resp = self.inner.http.get(&url).send().await?;
+            let status = resp.status();
+            let meta = parse_response_meta(&resp);
+
+            if status.is_success() {
+                let body_text = resp.text().await?;
+                let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
+                    let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+                    eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
+                    e
+                })?;
+                return Ok((result, meta));
+            }
+
+            if is_retryable(status) && attempt < MAX_RETRIES {
+                eprintln!("[sdk] GET {path} returned {status}, will retry");
+                last_err = Some(parse_api_error(resp, &meta.request_id).await);
+                continue;
+            }
+
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let body_text = resp.text().await?;
-        let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-            let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
-            eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
-            e
-        })?;
-        Ok((result, meta))
+        Err(last_err.unwrap_or_else(|| Error::Api(ApiError {
+            status_code: 502,
+            code: "retry_exhausted".into(),
+            message: format!("max retries ({MAX_RETRIES}) exceeded"),
+            request_id: String::new(),
+        })))
     }
 
     /// Sends a DELETE request and deserializes the response.
