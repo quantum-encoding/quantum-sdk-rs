@@ -77,7 +77,8 @@ pub use video::{
 // Audio types
 pub use audio::{
     AlignRequest, AlignResponse, AlignmentSegment, AudioResponse, DialogueRequest, DialogueTurn,
-    DubRequest, IsolateRequest, MusicClip, MusicRequest, MusicResponse, RemixRequest,
+    DubRequest, ElevenMusicRequest, ElevenMusicResponse, FinetuneInfo, IsolateRequest,
+    ListFinetunesResponse, MusicClip, MusicRequest, MusicResponse, MusicSection, RemixRequest,
     SoundEffectRequest, SoundEffectResponse, SpeechToSpeechRequest, StarfishTTSRequest,
     SttRequest, SttResponse, TtsRequest, TtsResponse, VoiceDesignRequest,
 };

@@ -380,6 +380,88 @@ pub struct StarfishTTSRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Eleven Music (advanced music generation with sections, finetunes, etc.)
+// ---------------------------------------------------------------------------
+
+/// A section within an Eleven Music generation request.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MusicSection {
+    pub section_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lyrics: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style_exclude: Option<String>,
+}
+
+/// Request body for advanced music generation (ElevenLabs Eleven Music).
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ElevenMusicRequest {
+    pub model: String,
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sections: Option<Vec<MusicSection>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocals: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style_exclude: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finetune_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_reference_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edit_instruction: Option<String>,
+}
+
+/// Response from advanced music generation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ElevenMusicResponse {
+    /// Base64-encoded audio data.
+    pub audio_base64: String,
+    /// Audio format (e.g. "mp3").
+    pub format: String,
+    /// File size in bytes.
+    #[serde(default)]
+    pub size_bytes: i64,
+    /// Unique generation identifier (can be used as edit_reference_id).
+    #[serde(default)]
+    pub generation_id: String,
+    /// Model used.
+    #[serde(default)]
+    pub model: String,
+    /// Total cost in ticks.
+    #[serde(default)]
+    pub cost_ticks: i64,
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Info about a music finetune.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinetuneInfo {
+    pub finetune_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// Response from listing finetunes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListFinetunesResponse {
+    pub finetunes: Vec<FinetuneInfo>,
+}
+
+// ---------------------------------------------------------------------------
 // Client impl
 // ---------------------------------------------------------------------------
 
@@ -558,6 +640,63 @@ impl Client {
         if resp.request_id.is_empty() {
             resp.request_id = meta.request_id;
         }
+        Ok(resp)
+    }
+
+    /// Generates music via ElevenLabs Eleven Music (advanced: sections, finetunes, edits).
+    pub async fn generate_music_advanced(
+        &self,
+        req: &ElevenMusicRequest,
+    ) -> Result<ElevenMusicResponse> {
+        let (mut resp, meta) = self
+            .post_json::<ElevenMusicRequest, ElevenMusicResponse>(
+                "/qai/v1/audio/music/advanced",
+                req,
+            )
+            .await?;
+        if resp.cost_ticks == 0 {
+            resp.cost_ticks = meta.cost_ticks;
+        }
+        if resp.request_id.is_empty() {
+            resp.request_id = meta.request_id;
+        }
+        Ok(resp)
+    }
+
+    /// Lists all music finetunes for the authenticated user.
+    pub async fn list_finetunes(&self) -> Result<ListFinetunesResponse> {
+        let (resp, _) = self
+            .get_json::<ListFinetunesResponse>("/qai/v1/audio/finetunes")
+            .await?;
+        Ok(resp)
+    }
+
+    /// Creates a new music finetune from audio sample files.
+    pub async fn create_finetune(
+        &self,
+        name: &str,
+        files: Vec<crate::voices::CloneVoiceFile>,
+    ) -> Result<FinetuneInfo> {
+        let mut form = reqwest::multipart::Form::new().text("name", name.to_string());
+
+        for file in files {
+            let part = reqwest::multipart::Part::bytes(file.data)
+                .file_name(file.filename)
+                .mime_str(&file.mime_type)
+                .map_err(|e| crate::error::Error::Http(e.into()))?;
+            form = form.part("files", part);
+        }
+
+        let (resp, _) = self
+            .post_multipart::<FinetuneInfo>("/qai/v1/audio/finetunes", form)
+            .await?;
+        Ok(resp)
+    }
+
+    /// Deletes a music finetune by ID.
+    pub async fn delete_finetune(&self, id: &str) -> Result<serde_json::Value> {
+        let path = format!("/qai/v1/audio/finetunes/{id}");
+        let (resp, _) = self.delete_json::<serde_json::Value>(&path).await?;
         Ok(resp)
     }
 }
