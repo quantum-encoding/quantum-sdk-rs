@@ -208,7 +208,7 @@ pub struct AudioResponse {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
-/// A single dialogue turn.
+/// A single dialogue turn (used for building the request — converted to text + voices).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DialogueTurn {
     /// Speaker name or identifier.
@@ -217,24 +217,68 @@ pub struct DialogueTurn {
     /// Text for this speaker to say.
     pub text: String,
 
-    /// Voice to use for this speaker.
+    /// Voice ID to use for this speaker.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
 }
 
-/// Request body for multi-speaker dialogue generation.
+/// Voice mapping for ElevenLabs dialogue.
+#[derive(Debug, Clone, Serialize)]
+pub struct DialogueVoice {
+    pub voice_id: String,
+    pub name: String,
+}
+
+/// Request body sent to the QAI proxy for dialogue generation.
+/// The proxy expects `text` (full script) + `voices` (speaker-to-voice mapping).
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DialogueRequest {
+    /// Full dialogue script (e.g. "Speaker1: Hello!\nSpeaker2: Hi there!").
+    pub text: String,
+
+    /// Voice mappings — each speaker name mapped to a voice_id.
+    pub voices: Vec<DialogueVoice>,
+
     /// Dialogue model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
-    /// Dialogue turns.
-    pub dialogue: Vec<DialogueTurn>,
-
     /// Output audio format.
-    #[serde(rename = "format", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "output_format", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
+
+    /// Seed for reproducible generation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<i32>,
+}
+
+impl DialogueRequest {
+    /// Build a DialogueRequest from individual turns.
+    /// Converts turns into the text + voices format the API expects.
+    pub fn from_turns(turns: Vec<DialogueTurn>, model: Option<String>) -> Self {
+        // Build the script text: "Speaker: text\n..."
+        let text = turns.iter()
+            .map(|t| format!("{}: {}", t.speaker, t.text))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Deduplicate voices — one entry per unique speaker
+        let mut seen = std::collections::HashSet::new();
+        let voices: Vec<DialogueVoice> = turns.iter()
+            .filter(|t| t.voice.is_some() && seen.insert(t.speaker.clone()))
+            .map(|t| DialogueVoice {
+                voice_id: t.voice.clone().unwrap_or_default(),
+                name: t.speaker.clone(),
+            })
+            .collect();
+
+        Self {
+            text,
+            voices,
+            model,
+            ..Default::default()
+        }
+    }
 }
 
 /// Request body for speech-to-speech conversion.
