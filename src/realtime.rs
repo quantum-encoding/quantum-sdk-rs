@@ -231,12 +231,31 @@ impl Client {
 /// Response from the QAI realtime session endpoint.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RealtimeSession {
-    /// Ephemeral xAI token for direct WebSocket connection.
+    /// Ephemeral token for direct WebSocket connection (xAI/OpenAI).
+    #[serde(default)]
     pub ephemeral_token: String,
-    /// WebSocket URL to connect to (e.g. "wss://api.x.ai/v1/realtime").
+    /// WebSocket URL to connect to.
+    /// For xAI: "wss://api.x.ai/v1/realtime"
+    /// For ElevenLabs: the signed WebSocket URL (includes auth in URL).
+    #[serde(default)]
     pub url: String,
+    /// Signed URL (alias for url — ElevenLabs returns this field name).
+    #[serde(default)]
+    pub signed_url: String,
     /// Session ID for billing (pass to realtime/end on disconnect).
+    #[serde(default)]
     pub session_id: String,
+    /// Provider name (e.g. "elevenlabs", "xai").
+    #[serde(default)]
+    pub provider: String,
+}
+
+impl RealtimeSession {
+    /// Get the WebSocket URL — checks both `url` and `signed_url` fields.
+    pub fn ws_url(&self) -> &str {
+        if !self.signed_url.is_empty() { &self.signed_url }
+        else { &self.url }
+    }
 }
 
 impl Client {
