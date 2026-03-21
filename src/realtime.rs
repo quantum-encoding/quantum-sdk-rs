@@ -48,7 +48,7 @@ type WsStream = futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream
 /// Configuration for a realtime voice session.
 #[derive(Debug, Clone, Serialize)]
 pub struct RealtimeConfig {
-    /// Voice to use (e.g. "Sal", "Eve", "Vesper").
+    /// Voice to use (e.g. "Sal", "Eve", "Vesper" for xAI; "alloy", "echo" for OpenAI).
     pub voice: String,
 
     /// System instructions for the AI.
@@ -60,6 +60,11 @@ pub struct RealtimeConfig {
     /// Tool definitions (xAI Realtime API format).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<serde_json::Value>,
+
+    /// Model to use for the realtime session (e.g. "gpt-4o-realtime-preview").
+    /// When empty, the server picks the default for the provider.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
 }
 
 impl Default for RealtimeConfig {
@@ -69,6 +74,7 @@ impl Default for RealtimeConfig {
             instructions: String::new(),
             sample_rate: 24000,
             tools: Vec::new(),
+            model: String::new(),
         }
     }
 }
@@ -214,22 +220,8 @@ impl Client {
         };
         let receiver = RealtimeReceiver { stream };
 
-        // Send session.update with config (xAI Realtime API format)
-        let session_update = serde_json::json!({
-            "type": "session.update",
-            "session": {
-                "voice": config.voice,
-                "instructions": config.instructions,
-                "turn_detection": { "type": "server_vad" },
-                "input_audio_transcription": { "model": "grok-2-audio" },
-                "audio": {
-                    "input": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
-                    "output": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
-                },
-                "tools": config.tools,
-            }
-        });
-
+        // Send session.update with config
+        let session_update = build_session_update(config);
         sender.send_raw(&serde_json::to_string(&session_update)?).await?;
 
         Ok((sender, receiver))
@@ -248,11 +240,21 @@ pub struct RealtimeSession {
 }
 
 impl Client {
-    /// Request an ephemeral token from the QAI proxy for direct xAI voice connection.
+    /// Request an ephemeral token from the QAI proxy for direct voice connection.
     /// Call this before `realtime_connect_direct` to get a scoped token.
+    /// Pass an optional `provider` to route to a specific backend (e.g. "openai").
     pub async fn realtime_session(&self) -> Result<RealtimeSession> {
+        self.realtime_session_for(None).await
+    }
+
+    /// Request an ephemeral token for a specific provider.
+    pub async fn realtime_session_for(&self, provider: Option<&str>) -> Result<RealtimeSession> {
+        let mut body = serde_json::json!({});
+        if let Some(p) = provider {
+            body["provider"] = serde_json::Value::String(p.to_string());
+        }
         let (session, _meta): (RealtimeSession, _) = self
-            .post_json("/qai/v1/realtime/session", &serde_json::json!({}))
+            .post_json("/qai/v1/realtime/session", &body)
             .await?;
         Ok(session)
     }
@@ -350,24 +352,50 @@ pub async fn realtime_connect_direct_to(
     let receiver = RealtimeReceiver { stream };
 
     // Send session.update
-    let session_update = serde_json::json!({
-        "type": "session.update",
-        "session": {
-            "voice": config.voice,
-            "instructions": config.instructions,
-            "turn_detection": { "type": "server_vad" },
-            "input_audio_transcription": { "model": "grok-2-audio" },
-            "audio": {
-                "input": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
-                "output": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
-            },
-            "tools": config.tools,
-        }
-    });
-
+    let session_update = build_session_update(config);
     sender.send_raw(&serde_json::to_string(&session_update)?).await?;
 
     Ok((sender, receiver))
+}
+
+// ── Session update builder ──
+
+/// Build the `session.update` JSON payload from config.
+/// Adapts the format based on whether a model is specified (OpenAI uses `model`
+/// at the session level; xAI uses `input_audio_transcription.model`).
+fn build_session_update(config: &RealtimeConfig) -> serde_json::Value {
+    let is_openai = config.model.contains("gpt-") || config.model.contains("realtime");
+
+    let mut session = serde_json::json!({
+        "voice": config.voice,
+        "instructions": config.instructions,
+        "turn_detection": { "type": "server_vad" },
+        "tools": config.tools,
+    });
+
+    if !config.model.is_empty() {
+        session["model"] = serde_json::Value::String(config.model.clone());
+    }
+
+    if is_openai {
+        // OpenAI Realtime API format: modalities + input_audio_format/output_audio_format
+        session["modalities"] = serde_json::json!(["text", "audio"]);
+        session["input_audio_format"] = serde_json::json!("pcm16");
+        session["output_audio_format"] = serde_json::json!("pcm16");
+        session["input_audio_transcription"] = serde_json::json!({ "model": "gpt-4o-mini-transcribe" });
+    } else {
+        // xAI Realtime API format
+        session["input_audio_transcription"] = serde_json::json!({ "model": "grok-2-audio" });
+        session["audio"] = serde_json::json!({
+            "input": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
+            "output": { "format": { "type": "audio/pcm", "rate": config.sample_rate } },
+        });
+    }
+
+    serde_json::json!({
+        "type": "session.update",
+        "session": session,
+    })
 }
 
 // ── RealtimeSender ──
@@ -547,6 +575,7 @@ mod tests {
         assert_eq!(config.sample_rate, 24000);
         assert!(config.instructions.is_empty());
         assert!(config.tools.is_empty());
+        assert!(config.model.is_empty());
     }
 
     #[test]
@@ -567,6 +596,7 @@ mod tests {
                     "required": ["location"]
                 }
             })],
+            model: String::new(),
         };
 
         let json = serde_json::to_value(&config).unwrap();
