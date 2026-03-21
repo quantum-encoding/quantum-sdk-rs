@@ -161,12 +161,14 @@ pub struct ChatResponse {
     pub model: String,
 
     /// List of content blocks (text, thinking, tool_use).
+    #[serde(default)]
     pub content: Vec<ContentBlock>,
 
     /// Token counts and cost.
     pub usage: Option<ChatUsage>,
 
     /// Why generation stopped ("end_turn", "tool_use", "max_tokens").
+    #[serde(default)]
     pub stop_reason: String,
 
     /// Total cost from the X-QAI-Cost-Ticks header.
