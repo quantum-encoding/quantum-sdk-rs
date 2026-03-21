@@ -24,10 +24,13 @@
 pub mod account;
 pub mod agent;
 pub mod audio;
+pub mod auth;
+pub mod batch;
 pub mod chat;
 pub mod client;
 pub mod compute;
 pub mod contact;
+pub mod credits;
 pub mod documents;
 pub mod embeddings;
 pub mod error;
@@ -83,6 +86,21 @@ pub use audio::{
 pub use account::{
     BalanceResponse, PricingEntry, PricingResponse, UsageEntry, UsageQuery, UsageResponse,
     UsageSummaryMonth, UsageSummaryResponse,
+};
+
+// Auth types
+pub use auth::{AuthAppleRequest, AuthResponse, AuthUser};
+
+// Batch types
+pub use batch::{
+    BatchJob, BatchJobInfo, BatchJobsResponse, BatchJsonlResponse, BatchSubmitResponse,
+};
+
+// Credits types
+pub use credits::{
+    CreditBalanceResponse, CreditPack, CreditPacksResponse, CreditPurchaseRequest,
+    CreditPurchaseResponse, CreditTier, CreditTiersResponse, DevProgramApplyRequest,
+    DevProgramApplyResponse,
 };
 
 // Jobs types
