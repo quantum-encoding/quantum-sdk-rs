@@ -48,6 +48,10 @@ pub struct ImageRequest {
     /// Background mode (e.g. "auto", "transparent", "opaque"). GPT-Image specific.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+
+    /// Image URL or data URI for image-to-3D conversion (Meshy).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
 }
 
 /// Response from image generation.
