@@ -268,7 +268,17 @@ impl Client {
 
     /// Request an ephemeral token for a specific provider.
     pub async fn realtime_session_for(&self, provider: Option<&str>) -> Result<RealtimeSession> {
-        let mut body = serde_json::json!({});
+        self.realtime_session_with(provider, serde_json::json!({})).await
+    }
+
+    /// Request a realtime session with full configuration.
+    /// The body is sent as-is to POST /qai/v1/realtime/session.
+    /// Use this to pass voice, prompt, tools, etc. for ElevenLabs ConvAI.
+    pub async fn realtime_session_with(
+        &self,
+        provider: Option<&str>,
+        mut body: serde_json::Value,
+    ) -> Result<RealtimeSession> {
         if let Some(p) = provider {
             body["provider"] = serde_json::Value::String(p.to_string());
         }
