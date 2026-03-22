@@ -165,6 +165,62 @@ pub struct SSHKeyRequest {
     pub ssh_public_key: String,
 }
 
+/// Request for querying compute billing from BigQuery.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct BillingRequest {
+    /// Filter by instance ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+
+    /// Start date for billing period (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<String>,
+
+    /// End date for billing period (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+}
+
+/// A single billing line item from BigQuery.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BillingEntry {
+    /// Instance identifier.
+    pub instance_id: String,
+
+    /// Instance name.
+    #[serde(default)]
+    pub instance_name: Option<String>,
+
+    /// Total cost in USD.
+    pub cost_usd: f64,
+
+    /// Usage duration in hours.
+    #[serde(default)]
+    pub usage_hours: Option<f64>,
+
+    /// SKU description (e.g. "N1 Predefined Instance Core").
+    #[serde(default)]
+    pub sku_description: Option<String>,
+
+    /// Billing period start.
+    #[serde(default)]
+    pub start_time: Option<String>,
+
+    /// Billing period end.
+    #[serde(default)]
+    pub end_time: Option<String>,
+}
+
+/// Response from billing query.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BillingResponse {
+    /// Individual billing entries.
+    pub entries: Vec<BillingEntry>,
+
+    /// Total cost across all entries.
+    pub total_cost_usd: f64,
+}
+
 impl Client {
     /// Lists available compute templates (GPU configurations and pricing).
     pub async fn compute_templates(&self) -> Result<TemplatesResponse> {
@@ -218,6 +274,14 @@ impl Client {
         let path = format!("/qai/v1/compute/instance/{id}/keepalive");
         let (resp, _meta) = self
             .post_json::<serde_json::Value, StatusResponse>(&path, &serde_json::json!({}))
+            .await?;
+        Ok(resp)
+    }
+
+    /// Queries compute billing from BigQuery via the QAI backend.
+    pub async fn compute_billing(&self, req: &BillingRequest) -> Result<BillingResponse> {
+        let (resp, _meta) = self
+            .post_json::<BillingRequest, BillingResponse>("/qai/v1/compute/billing", req)
             .await?;
         Ok(resp)
     }

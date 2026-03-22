@@ -112,8 +112,9 @@ pub use keys::{CreateKeyRequest, CreateKeyResponse, KeyDetails, ListKeysResponse
 
 // Compute types
 pub use compute::{
-    ComputeInstance, ComputeTemplate, DeleteResponse, InstanceResponse, InstancesResponse,
-    ProvisionRequest, ProvisionResponse, SSHKeyRequest, TemplatesResponse,
+    BillingEntry, BillingRequest, BillingResponse, ComputeInstance, ComputeTemplate,
+    DeleteResponse, InstanceResponse, InstancesResponse, ProvisionRequest, ProvisionResponse,
+    SSHKeyRequest, TemplatesResponse,
 };
 
 // Voices types
