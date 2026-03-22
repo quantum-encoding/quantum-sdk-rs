@@ -80,6 +80,17 @@ impl Client {
         Ok(resp)
     }
 
+    /// Opens an SSE stream for a job, returning the raw response.
+    /// Events: progress, complete, error. Auto-closes on terminal state.
+    pub async fn stream_job(
+        &self,
+        job_id: &str,
+    ) -> Result<reqwest::Response> {
+        let path = format!("/qai/v1/jobs/{job_id}/stream");
+        let (resp, _meta) = self.get_stream_raw(&path).await?;
+        Ok(resp)
+    }
+
     /// Polls a job until completion or timeout.
     /// Returns the final status response.
     pub async fn poll_job(
@@ -103,5 +114,29 @@ impl Client {
             error: Some(format!("Job polling timed out after {max_attempts} attempts")),
             cost_ticks: 0,
         })
+    }
+
+    /// Convenience method for 3D model generation via the async jobs system.
+    ///
+    /// Submits a job with type `"3d/generate"` and the given parameters.
+    /// Returns the job creation response -- use `poll_job` to wait for completion.
+    pub async fn generate_3d(
+        &self,
+        model: &str,
+        prompt: Option<&str>,
+        image_url: Option<&str>,
+    ) -> Result<JobCreateResponse> {
+        let mut params = serde_json::json!({ "model": model });
+        if let Some(p) = prompt {
+            params["prompt"] = serde_json::Value::String(p.to_string());
+        }
+        if let Some(u) = image_url {
+            params["image_url"] = serde_json::Value::String(u.to_string());
+        }
+        let req = JobCreateRequest {
+            job_type: "3d/generate".to_string(),
+            params,
+        };
+        self.create_job(&req).await
     }
 }

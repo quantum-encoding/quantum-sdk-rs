@@ -118,7 +118,10 @@ pub use compute::{
 };
 
 // Voices types
-pub use voices::{CloneVoiceFile, CloneVoiceResponse, Voice, VoicesResponse};
+pub use voices::{
+    AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceResponse, SharedVoice,
+    SharedVoicesResponse, Voice, VoiceLibraryQuery, VoicesResponse,
+};
 
 // Contact types
 pub use contact::ContactRequest;

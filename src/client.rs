@@ -279,6 +279,33 @@ impl Client {
         Ok((result, meta))
     }
 
+    /// Sends a GET request expecting an SSE stream response.
+    /// Returns the raw reqwest::Response for the caller to read events from.
+    /// Uses a separate client without timeout — cancellation is via drop.
+    pub async fn get_stream_raw(
+        &self,
+        path: &str,
+    ) -> Result<(reqwest::Response, ResponseMeta)> {
+        let url = format!("{}{}", self.inner.base_url, path);
+
+        let stream_client = reqwest::Client::builder().build()?;
+
+        let resp = stream_client
+            .get(&url)
+            .header(AUTHORIZATION, self.inner.auth_header.clone())
+            .header("Accept", "text/event-stream")
+            .send()
+            .await?;
+
+        let meta = parse_response_meta(&resp);
+
+        if !resp.status().is_success() {
+            return Err(parse_api_error(resp, &meta.request_id).await);
+        }
+
+        Ok((resp, meta))
+    }
+
     /// Sends a JSON POST request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
     /// Uses a separate client without timeout -- cancellation is via drop.
