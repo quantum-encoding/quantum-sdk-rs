@@ -52,6 +52,28 @@ pub struct ImageRequest {
     /// Image URL or data URI for image-to-3D conversion (Meshy).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+
+    // ── Meshy 3D generation options ──
+
+    /// Mesh topology: "triangle" or "quad".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topology: Option<String>,
+
+    /// Target polygon count (100-300,000).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_polycount: Option<i32>,
+
+    /// Symmetry mode: "auto", "on", or "off".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symmetry_mode: Option<String>,
+
+    /// Pose mode: "", "a-pose", or "t-pose".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pose_mode: Option<String>,
+
+    /// Generate PBR texture maps (base_color, metallic, roughness, normal).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_pbr: Option<bool>,
 }
 
 /// Response from image generation.
