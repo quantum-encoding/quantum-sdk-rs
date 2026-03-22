@@ -106,6 +106,7 @@ pub struct BatchJobInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchJobsResponse {
     /// The list of batch jobs.
+    #[serde(default)]
     pub jobs: Vec<BatchJobInfo>,
 }
 
