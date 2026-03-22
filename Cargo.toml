@@ -1,9 +1,13 @@
 [package]
 name = "quantum-sdk"
-version = "0.1.0"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 description = "Rust client SDK for the Quantum AI API"
 license = "MIT"
+repository = "https://github.com/quantum-encoding/quantum-sdk-rs"
+keywords = ["ai", "sdk", "cosmic-duck", "openai", "anthropic"]
+categories = ["api-bindings", "web-programming::http-client"]
+homepage = "https://cosmicduck.dev/developers"
 
 [dependencies]
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
