@@ -36,10 +36,12 @@ pub mod embeddings;
 pub mod error;
 pub mod image;
 pub mod jobs;
+pub mod mesh;
 pub mod keys;
 pub mod models;
 pub mod rag;
 pub mod realtime;
+pub mod search;
 pub mod session;
 pub mod video;
 pub mod voices;
@@ -122,6 +124,9 @@ pub use voices::{
     AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceResponse, SharedVoice,
     SharedVoicesResponse, Voice, VoiceLibraryQuery, VoicesResponse,
 };
+
+// 3D Mesh types
+pub use mesh::{ModelUrls, RemeshRequest};
 
 // Contact types
 pub use contact::ContactRequest;
