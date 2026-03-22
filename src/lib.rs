@@ -125,8 +125,10 @@ pub use voices::{
     SharedVoicesResponse, Voice, VoiceLibraryQuery, VoicesResponse,
 };
 
-// 3D Mesh types
-pub use mesh::{ModelUrls, RemeshRequest};
+// 3D Mesh pipeline types
+pub use mesh::{
+    AnimateRequest, AnimationPostProcess, ModelUrls, RemeshRequest, RetextureRequest, RigRequest,
+};
 
 // Contact types
 pub use contact::ContactRequest;

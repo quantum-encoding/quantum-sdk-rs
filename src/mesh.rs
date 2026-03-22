@@ -1,11 +1,8 @@
-//! 3D model generation and remeshing via Meshy.
+//! 3D model pipeline via Meshy: generate → remesh → retexture → rig → animate.
 //!
-//! Models are generated and remeshed through the async job system.
-//! Use [`Client::create_job`] with `job_type: "3d/generate"` or `"3d/remesh"`,
-//! then poll with [`Client::poll_job`].
-//!
-//! This module provides typed request structs and a convenience method
-//! for remesh operations.
+//! All operations run through the async job system. Each method submits a job
+//! and polls until completion. Use the typed request structs or call
+//! [`Client::create_job`] directly with the appropriate `job_type`.
 
 use serde::{Deserialize, Serialize};
 
@@ -70,36 +67,113 @@ pub struct ModelUrls {
     pub blend: String,
 }
 
+/// Request for AI retexturing of an existing 3D model.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct RetextureRequest {
+    /// ID of a completed 3D task to retexture.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_task_id: Option<String>,
+
+    /// Direct URL to a 3D model file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_url: Option<String>,
+
+    /// Text prompt describing the desired texture.
+    pub prompt: String,
+
+    /// Enable PBR texture maps (metallic, roughness, normal).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_pbr: Option<bool>,
+
+    /// Meshy AI model to use (default: "meshy-6").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_model: Option<String>,
+}
+
+/// Request for auto-rigging a humanoid 3D model.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct RigRequest {
+    /// ID of a completed 3D task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_task_id: Option<String>,
+
+    /// Direct URL to a 3D model file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_url: Option<String>,
+
+    /// Height of the character in meters (for skeleton scaling).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height_meters: Option<f64>,
+}
+
+/// Request for applying an animation to a rigged character.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AnimateRequest {
+    /// ID of a completed rigging task.
+    pub rig_task_id: String,
+
+    /// Animation action ID from Meshy's animation library.
+    pub action_id: i32,
+
+    /// Optional post-processing (e.g. FPS conversion, format conversion).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_process: Option<AnimationPostProcess>,
+}
+
+/// Post-processing options for animation export.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AnimationPostProcess {
+    /// Operation: "change_fps", "fbx2usdz", "extract_armature".
+    pub operation_type: String,
+    /// Target FPS (for "change_fps"): 24, 25, 30, 60.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps: Option<i32>,
+}
+
+// ── Convenience methods ──
+
 impl Client {
     /// Submit a 3D remesh job and poll until completion.
     ///
     /// Returns the job result containing `model_urls` with download links
     /// for each requested format (including STL for 3D printing).
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # async fn example(client: &quantum_sdk::Client) -> quantum_sdk::Result<()> {
-    /// let result = client.remesh(&quantum_sdk::RemeshRequest {
-    ///     input_task_id: Some("meshy_task_abc123".into()),
-    ///     target_formats: Some(vec!["glb".into(), "stl".into()]),
-    ///     target_polycount: Some(10000),
-    ///     ..Default::default()
-    /// }).await?;
-    ///
-    /// if let Some(urls) = result.result {
-    ///     let stl_url = urls["model_urls"]["stl"].as_str();
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn remesh(&self, req: &RemeshRequest) -> Result<JobStatusResponse> {
-        let params = serde_json::to_value(req)?;
+        self.submit_and_poll("3d/remesh", req).await
+    }
+
+    /// Submit a retexture job — apply new AI-generated textures to a 3D model.
+    ///
+    /// Returns the job result containing `model_urls` with the retextured model.
+    pub async fn retexture(&self, req: &RetextureRequest) -> Result<JobStatusResponse> {
+        self.submit_and_poll("3d/retexture", req).await
+    }
+
+    /// Submit a rigging job — add a humanoid skeleton to a 3D model.
+    ///
+    /// Returns the job result containing rigged FBX/GLB URLs and basic animations.
+    pub async fn rig(&self, req: &RigRequest) -> Result<JobStatusResponse> {
+        self.submit_and_poll("3d/rig", req).await
+    }
+
+    /// Submit an animation job — apply a motion to a rigged character.
+    ///
+    /// Returns the job result containing animated FBX/GLB URLs.
+    pub async fn animate(&self, req: &AnimateRequest) -> Result<JobStatusResponse> {
+        self.submit_and_poll("3d/animate", req).await
+    }
+
+    /// Internal: submit a job and poll until completion (shared by all 3D ops).
+    async fn submit_and_poll(
+        &self,
+        job_type: &str,
+        params: &impl serde::Serialize,
+    ) -> Result<JobStatusResponse> {
+        let params = serde_json::to_value(params)?;
 
         let create_resp = self
             .create_job(&JobCreateRequest {
-                job_type: "3d/remesh".into(),
-                params: serde_json::json!(params),
+                job_type: job_type.into(),
+                params,
             })
             .await?;
 
