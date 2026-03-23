@@ -117,6 +117,22 @@ pub struct MissionRequest {
     /// Context management configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_config: Option<ContextConfig>,
+
+    /// Model for worker nodes (codegen strategy).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_model: Option<String>,
+
+    /// Deployment ID — route worker inference to a managed Vertex endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_id: Option<String>,
+
+    /// Build command to run after codegen (e.g. "cargo build", "npm run build").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_command: Option<String>,
+
+    /// Workspace directory for generated files.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_path: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
