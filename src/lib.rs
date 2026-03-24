@@ -144,9 +144,10 @@ pub use documents::{
 
 // RAG types
 pub use rag::{
-    RagCorpus, RagResult, RagSearchRequest, RagSearchResponse, SurrealRagProvider,
-    SurrealRagProvidersResponse, SurrealRagResult, SurrealRagSearchRequest,
-    SurrealRagSearchResponse,
+    Collection, CollectionDocument, CollectionSearchRequest, CollectionSearchResult,
+    CollectionUploadResult, CreateCollectionRequest, RagCorpus, RagResult, RagSearchRequest,
+    RagSearchResponse, SurrealRagProvider, SurrealRagProvidersResponse, SurrealRagResult,
+    SurrealRagSearchRequest, SurrealRagSearchResponse,
 };
 
 // Model types

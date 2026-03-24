@@ -135,6 +135,11 @@ pub struct ContentBlock {
     /// Function arguments for "tool_use" blocks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<HashMap<String, serde_json::Value>>,
+
+    /// Gemini thought signature — must be echoed back with tool results.
+    /// This is an opaque base64-encoded blob from Gemini 3.x models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// Defines a function the model can call.

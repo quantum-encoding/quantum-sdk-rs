@@ -1,6 +1,6 @@
 [package]
 name = "quantum-sdk"
-version = "0.2.0"
+version = "0.3.1"
 edition = "2024"
 description = "Rust client SDK for the Quantum AI API"
 license = "MIT"
@@ -10,12 +10,12 @@ categories = ["api-bindings", "web-programming::http-client"]
 homepage = "https://cosmicduck.dev/developers"
 
 [dependencies]
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 futures-util = "0.3"
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 pin-project-lite = "0.2"
 bytes = "1"
 urlencoding = "2"

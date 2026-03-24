@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::chat::ChatRequest;
 use crate::client::Client;
 use crate::error::Result;
 
@@ -138,5 +139,19 @@ impl Client {
             params,
         };
         self.create_job(&req).await
+    }
+
+    /// Submits a chat completion as an async job.
+    ///
+    /// Useful for long-running models (e.g. Opus) where synchronous `/qai/v1/chat`
+    /// may time out. Params are the same shape as [`ChatRequest`].
+    /// Use [`stream_job()`] or [`poll_job()`] to get the result.
+    pub async fn chat_job(&self, req: &ChatRequest) -> Result<JobCreateResponse> {
+        let params = serde_json::to_value(req)?;
+        let job_req = JobCreateRequest {
+            job_type: "chat".to_string(),
+            params,
+        };
+        self.create_job(&job_req).await
     }
 }
