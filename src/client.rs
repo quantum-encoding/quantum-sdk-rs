@@ -17,6 +17,18 @@ fn is_retryable(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 429 | 502 | 503 | 504)
 }
 
+/// Check if an error response body contains a permanent (non-retryable) error
+/// even when wrapped in a retryable status code (e.g. 502 wrapping a provider 400).
+fn is_permanent_error(body: &str) -> bool {
+    let lower = body.to_lowercase();
+    lower.contains("content moderation")
+        || lower.contains("content_policy")
+        || lower.contains("safety_block")
+        || lower.contains("invalid argument")
+        || lower.contains("invalid_request")
+        || (lower.contains("status 400") && lower.contains("rejected"))
+}
+
 /// The default Quantum AI API base URL.
 pub const DEFAULT_BASE_URL: &str = "https://api.quantumencoding.ai";
 
@@ -180,8 +192,16 @@ impl Client {
             }
 
             if is_retryable(status) && attempt < MAX_RETRIES {
+                // Read body to check if it's a permanent error wrapped in 502
+                let body_text = resp.text().await.unwrap_or_default();
+                if is_permanent_error(&body_text) {
+                    eprintln!("[sdk] POST {path} returned {status} but error is permanent, not retrying");
+                    let err = parse_api_error_from_text(status, &body_text, &meta.request_id);
+                    return Err(err);
+                }
                 eprintln!("[sdk] POST {path} returned {status}, will retry");
-                last_err = Some(parse_api_error(resp, &meta.request_id).await);
+                let err = parse_api_error_from_text(status, &body_text, &meta.request_id);
+                last_err = Some(err);
                 continue;
             }
 
@@ -226,8 +246,13 @@ impl Client {
             }
 
             if is_retryable(status) && attempt < MAX_RETRIES {
+                let body_text = resp.text().await.unwrap_or_default();
+                if is_permanent_error(&body_text) {
+                    eprintln!("[sdk] GET {path} returned {status} but error is permanent, not retrying");
+                    return Err(parse_api_error_from_text(status, &body_text, &meta.request_id));
+                }
                 eprintln!("[sdk] GET {path} returned {status}, will retry");
-                last_err = Some(parse_api_error(resp, &meta.request_id).await);
+                last_err = Some(parse_api_error_from_text(status, &body_text, &meta.request_id));
                 continue;
             }
 
@@ -399,4 +424,21 @@ async fn parse_api_error(resp: reqwest::Response, request_id: &str) -> Error {
         message,
         request_id: request_id.to_string(),
     })
+}
+
+fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id: &str) -> Error {
+    let status_code = status.as_u16();
+    let status_text = status.canonical_reason().unwrap_or("Unknown").to_string();
+
+    let (code, message) = if let Ok(err_body) = serde_json::from_str::<ApiErrorBody>(body) {
+        let msg = if err_body.error.message.is_empty() { body.to_string() } else { err_body.error.message };
+        let c = if !err_body.error.code.is_empty() { err_body.error.code }
+                else if !err_body.error.error_type.is_empty() { err_body.error.error_type }
+                else { status_text };
+        (c, msg)
+    } else {
+        (status_text, body.to_string())
+    };
+
+    Error::Api(ApiError { status_code, code, message, request_id: request_id.to_string() })
 }
