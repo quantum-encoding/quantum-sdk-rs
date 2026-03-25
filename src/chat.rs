@@ -176,6 +176,10 @@ pub struct ChatResponse {
     #[serde(default)]
     pub stop_reason: String,
 
+    /// Citation URLs from web search (when search is enabled via provider_options).
+    #[serde(default)]
+    pub citations: Vec<String>,
+
     /// Total cost from the X-QAI-Cost-Ticks header.
     #[serde(skip)]
     pub cost_ticks: i64,
