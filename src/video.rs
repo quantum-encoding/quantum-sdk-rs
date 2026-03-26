@@ -259,6 +259,34 @@ pub struct VideoTemplatesResponse {
 }
 
 // ---------------------------------------------------------------------------
+// HeyGen typed responses (with request_id)
+// ---------------------------------------------------------------------------
+
+/// Response from listing HeyGen avatars (includes request_id).
+#[derive(Debug, Clone, Deserialize)]
+pub struct HeyGenAvatarsResponse {
+    /// Available avatars (raw JSON items).
+    #[serde(default)]
+    pub avatars: Vec<serde_json::Value>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from listing HeyGen templates (includes request_id).
+#[derive(Debug, Clone, Deserialize)]
+pub struct HeyGenTemplatesResponse {
+    /// Available templates (raw JSON items).
+    #[serde(default)]
+    pub templates: Vec<serde_json::Value>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
+// ---------------------------------------------------------------------------
 // HeyGen Voices
 // ---------------------------------------------------------------------------
 

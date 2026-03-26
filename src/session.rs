@@ -32,6 +32,44 @@ pub struct ToolResult {
     pub is_error: Option<bool>,
 }
 
+/// A tool execution result from the client (used in SessionChatRequest.tool_results).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionToolResult {
+    /// References the tool_use ID from the previous response.
+    pub tool_call_id: String,
+
+    /// The tool execution result content.
+    pub content: String,
+
+    /// Whether the tool execution failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+}
+
+/// Context metadata returned in session responses (includes tools_cleared).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContextMetadata {
+    /// Total number of turns in the conversation.
+    #[serde(default)]
+    pub turn_count: i64,
+
+    /// Estimated token count of the current context.
+    #[serde(default)]
+    pub estimated_tokens: i64,
+
+    /// Whether the conversation was compacted in this request.
+    #[serde(default)]
+    pub compacted: bool,
+
+    /// Description of the compaction that occurred.
+    #[serde(default)]
+    pub compaction_note: Option<String>,
+
+    /// Number of stale tool results that were cleared.
+    #[serde(default)]
+    pub tools_cleared: Option<i32>,
+}
+
 /// Request body for session-based chat.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionChatRequest {

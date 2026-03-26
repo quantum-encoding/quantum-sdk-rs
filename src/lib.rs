@@ -57,11 +57,15 @@ pub use chat::{
 };
 
 // Session types
-pub use session::{ContextConfig, SessionChatRequest, SessionChatResponse, SessionContext, ToolResult};
+pub use session::{
+    ContextConfig, ContextMetadata, SessionChatRequest, SessionChatResponse, SessionContext,
+    SessionToolResult, ToolResult,
+};
 
 // Agent types
 pub use agent::{
-    AgentRequest, AgentStream, AgentStreamEvent, AgentWorker, MissionRequest, MissionWorker,
+    AgentEvent, AgentRequest, AgentStream, AgentStreamEvent, AgentWorker, AgentWorkerConfig,
+    MissionEvent, MissionRequest, MissionWorker, MissionWorkerConfig,
 };
 
 // Image types
@@ -71,11 +75,10 @@ pub use image::{
 
 // Video types
 pub use video::{
-    Avatar, AvatarsResponse, DigitalTwinRequest, GeneratedVideo, HeyGenVoice,
-    HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, StudioClip,
-    VideoStudioRequest, StudioVideoRequest,
-    VideoTranslateRequest, TranslateRequest,
-    VideoRequest, VideoResponse, VideoTemplate, VideoTemplatesResponse,
+    Avatar, AvatarsResponse, DigitalTwinRequest, GeneratedVideo, HeyGenAvatarsResponse,
+    HeyGenTemplatesResponse, HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest,
+    StudioClip, StudioVideoRequest, TranslateRequest, VideoRequest, VideoResponse,
+    VideoStudioRequest, VideoTemplate, VideoTemplatesResponse, VideoTranslateRequest,
 };
 
 // Audio types
@@ -110,7 +113,8 @@ pub use auth::{AuthAppleRequest, AuthResponse, AuthUser};
 
 // Batch types
 pub use batch::{
-    BatchJob, BatchJobInfo, BatchJobsResponse, BatchJsonlResponse, BatchSubmitResponse,
+    BatchJob, BatchJobInfo, BatchJobInput, BatchJobsResponse, BatchJsonlResponse,
+    BatchSubmitRequest, BatchSubmitResponse,
 };
 
 // Credits types
@@ -121,31 +125,36 @@ pub use credits::{
 };
 
 // Jobs types
-pub use jobs::{JobCreateRequest, JobCreateResponse, JobStatusResponse, JobStreamEvent, JobSummary, ListJobsResponse};
+pub use jobs::{
+    JobAcceptedResponse, JobCreateRequest, JobCreateResponse, JobListEntry, JobListResponse,
+    JobStatusResponse, JobStreamEvent, JobSummary, ListJobsResponse,
+};
 
 // Keys types
 pub use keys::{CreateKeyRequest, CreateKeyResponse, KeyDetails, ListKeysResponse, StatusResponse};
 
 // Compute types
 pub use compute::{
-    BillingEntry, BillingRequest, BillingResponse, ComputeInstance, ComputeTemplate,
-    DeleteResponse, InstanceResponse, InstancesResponse, ProvisionRequest, ProvisionResponse,
-    SSHKeyRequest, TemplatesResponse,
+    BillingEntry, BillingRequest, BillingResponse, ComputeInstance, ComputeInstanceInfo,
+    ComputeTemplate, DeleteResponse, InstanceResponse, InstancesResponse, ProvisionRequest,
+    ProvisionResponse, SSHKeyRequest, TemplatesResponse,
 };
 
 // Voices types
 pub use voices::{
-    AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceResponse, SharedVoice,
-    SharedVoicesResponse, Voice, VoiceInfo, VoiceLibraryQuery, VoicesResponse,
+    AddVoiceFromLibraryRequest, AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceRequest,
+    CloneVoiceResponse, SharedVoice, SharedVoicesResponse, Voice, VoiceInfo, VoiceLibraryQuery,
+    VoicesResponse,
 };
 
 // 3D Mesh pipeline types
 pub use mesh::{
-    AnimateRequest, AnimationPostProcess, ModelUrls, RemeshRequest, RetextureRequest, RigRequest,
+    AnimateRequest, AnimationPostProcess, BasicAnimations, Generate3DRequest, ModelUrls,
+    PostProcess, RemeshRequest, RetextureRequest, RigRequest,
 };
 
 // Contact types
-pub use contact::ContactRequest;
+pub use contact::{ContactRequest, ContactResponse};
 
 // Embeddings types
 pub use embeddings::{EmbedRequest, EmbedResponse};
@@ -171,12 +180,11 @@ pub use rag::{
 
 // Search types
 pub use search::{
-    Infobox, InfoboxResult,
-    Discussion, DiscussionResult,
-    NewsResult, SearchAnswerCitation, SearchAnswerChoice, SearchAnswerMessage,
-    SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk, SearchContextRequest,
-    SearchContextResponse, SearchContextSource, VideoResult, WebResult, WebSearchRequest,
-    WebSearchResponse,
+    ContextChunk, ContextOptions, Discussion, DiscussionResult, Infobox, InfoboxResult,
+    LLMContextResponse, NewsResult, SearchAnswerCitation, SearchAnswerChoice,
+    SearchAnswerMessage, SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk,
+    SearchContextRequest, SearchContextResponse, SearchContextSource, SearchMessage,
+    SearchOptions, VideoResult, WebResult, WebSearchRequest, WebSearchResponse,
 };
 
 // Model types
@@ -185,7 +193,7 @@ pub use models::{ModelInfo, PricingInfo};
 // Realtime voice types
 pub use realtime::{
     realtime_connect_direct, realtime_connect_direct_to, RealtimeConfig, RealtimeEvent,
-    RealtimeReceiver, RealtimeSender, RealtimeSession,
+    RealtimeReceiver, RealtimeSender, RealtimeSession, RealtimeSessionResponse,
 };
 
 // Error helpers

@@ -250,6 +250,9 @@ pub struct RealtimeSession {
     pub provider: String,
 }
 
+/// Backwards-compatible alias for [`RealtimeSession`].
+pub type RealtimeSessionResponse = RealtimeSession;
+
 impl RealtimeSession {
     /// Get the WebSocket URL — checks both `url` and `signed_url` fields.
     pub fn ws_url(&self) -> &str {

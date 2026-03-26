@@ -4,6 +4,68 @@ use crate::client::Client;
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
+// Search Options
+// ---------------------------------------------------------------------------
+
+/// Options for configuring web search requests.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SearchOptions {
+    /// Number of results to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<i32>,
+
+    /// Zero-based result offset for pagination.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
+
+    /// Country code filter (e.g. "US", "GB").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+
+    /// Language code filter (e.g. "en", "fr").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Time range filter (e.g. "24h", "7d", "30d").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
+
+    /// Adult content filtering ("off", "moderate", "strict").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safe_search: Option<String>,
+}
+
+/// Options for configuring LLM context search requests.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ContextOptions {
+    /// Number of context chunks to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<i32>,
+
+    /// Country code filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+
+    /// Language code filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Time range filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
+}
+
+/// A message in a search-answer conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchMessage {
+    /// Message role ("user" or "assistant").
+    pub role: String,
+
+    /// Message text content.
+    pub content: String,
+}
+
+// ---------------------------------------------------------------------------
 // Web Search
 // ---------------------------------------------------------------------------
 
@@ -246,6 +308,46 @@ pub struct SearchContextResponse {
 
     /// Original query.
     pub query: String,
+}
+
+/// LLM-optimised context response from web search.
+///
+/// Unlike [`SearchContextResponse`], this returns simple string sources
+/// and is the type returned by the Go SDK's `SearchContext` method.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LLMContextResponse {
+    /// Original search query.
+    pub query: String,
+
+    /// Content chunks suitable for LLM consumption.
+    #[serde(default)]
+    pub chunks: Vec<ContextChunk>,
+
+    /// Source URLs used.
+    #[serde(default)]
+    pub sources: Vec<String>,
+}
+
+/// A single chunk of context from a web page (simple variant).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextChunk {
+    /// Extracted page content.
+    pub content: String,
+
+    /// Source URL.
+    pub url: String,
+
+    /// Page title.
+    #[serde(default)]
+    pub title: String,
+
+    /// Relevance score.
+    #[serde(default)]
+    pub score: f64,
+
+    /// Content type (e.g. "text/html").
+    #[serde(default)]
+    pub content_type: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

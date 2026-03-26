@@ -89,6 +89,79 @@ pub struct JobStreamEvent {
     pub completed_at: Option<String>,
 }
 
+/// Response from async job submission (HeyGen, 3D, etc.).
+/// The client should poll the job status using `get_job`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct JobAcceptedResponse {
+    /// Unique job identifier for polling.
+    pub job_id: String,
+
+    /// Initial job status (e.g. "pending").
+    #[serde(default)]
+    pub status: String,
+
+    /// Job type.
+    #[serde(rename = "type", default)]
+    pub job_type: Option<String>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+/// A single job entry in the detailed job list response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct JobListEntry {
+    /// Unique job identifier.
+    pub job_id: String,
+
+    /// Job type (e.g. "video/generate", "audio/tts").
+    #[serde(rename = "type", default)]
+    pub job_type: Option<String>,
+
+    /// Job status ("pending", "processing", "completed", "failed").
+    pub status: String,
+
+    /// Job output when completed.
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
+
+    /// Error message if the job failed.
+    #[serde(default)]
+    pub error: Option<String>,
+
+    /// Total cost in ticks.
+    #[serde(default)]
+    pub cost_ticks: i64,
+
+    /// Job creation timestamp.
+    #[serde(default)]
+    pub created_at: Option<String>,
+
+    /// When processing began.
+    #[serde(default)]
+    pub started_at: Option<String>,
+
+    /// When the job finished.
+    #[serde(default)]
+    pub completed_at: Option<String>,
+
+    /// Originating request identifier.
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
+/// Response from listing jobs (detailed variant).
+#[derive(Debug, Clone, Deserialize)]
+pub struct JobListResponse {
+    /// The list of jobs.
+    pub jobs: Vec<JobListEntry>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: Option<String>,
+}
+
 impl Client {
     /// Creates an async job. Returns the job ID for polling.
     pub async fn create_job(&self, req: &JobCreateRequest) -> Result<JobCreateResponse> {

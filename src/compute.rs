@@ -133,6 +133,82 @@ pub struct ComputeInstance {
     pub auto_teardown_minutes: Option<i32>,
 }
 
+/// Detailed compute instance info with GPU, cost, and uptime details.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ComputeInstanceInfo {
+    /// Unique instance identifier.
+    pub instance_id: String,
+
+    /// Template that was used.
+    pub template: String,
+
+    /// Current instance status ("provisioning", "running", "stopping", "terminated", "failed").
+    pub status: String,
+
+    /// Live GCE instance status.
+    #[serde(default)]
+    pub gcp_status: Option<String>,
+
+    /// GCP zone.
+    pub zone: String,
+
+    /// GCE machine type.
+    #[serde(default)]
+    pub machine_type: Option<String>,
+
+    /// Public IP address (available once running).
+    #[serde(default)]
+    pub external_ip: Option<String>,
+
+    /// GPU accelerator type.
+    #[serde(default)]
+    pub gpu_type: Option<String>,
+
+    /// Number of GPUs.
+    #[serde(default)]
+    pub gpu_count: Option<i32>,
+
+    /// Whether this is a spot/preemptible instance.
+    #[serde(default)]
+    pub spot: bool,
+
+    /// Hourly rate in USD.
+    #[serde(default)]
+    pub hourly_usd: f64,
+
+    /// Total cost so far in USD.
+    #[serde(default)]
+    pub cost_usd: f64,
+
+    /// Total uptime in minutes.
+    #[serde(default)]
+    pub uptime_minutes: i32,
+
+    /// Inactivity timeout in minutes.
+    #[serde(default)]
+    pub auto_teardown_minutes: i32,
+
+    /// SSH username for the instance.
+    #[serde(default)]
+    pub ssh_username: Option<String>,
+
+    /// ISO 8601 timestamp of last activity.
+    #[serde(default)]
+    pub last_active_at: Option<String>,
+
+    /// ISO 8601 creation timestamp.
+    #[serde(default)]
+    pub created_at: Option<String>,
+
+    /// ISO 8601 termination timestamp (if terminated).
+    #[serde(default)]
+    pub terminated_at: Option<String>,
+
+    /// Error message if the instance failed.
+    #[serde(default)]
+    pub error_message: Option<String>,
+}
+
 /// Response from listing compute instances.
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstancesResponse {

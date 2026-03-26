@@ -135,6 +135,12 @@ pub struct MissionRequest {
     pub workspace_path: Option<String>,
 }
 
+/// Backwards-compatible alias for [`AgentWorker`].
+pub type AgentWorkerConfig = AgentWorker;
+
+/// Backwards-compatible alias for [`MissionWorker`].
+pub type MissionWorkerConfig = MissionWorker;
+
 // ---------------------------------------------------------------------------
 // SSE Stream
 // ---------------------------------------------------------------------------
@@ -150,6 +156,14 @@ pub struct AgentStreamEvent {
     #[serde(flatten)]
     pub data: HashMap<String, serde_json::Value>,
 }
+
+/// A single SSE event from an agent run stream.
+/// Alias for [`AgentStreamEvent`] for backwards compatibility.
+pub type AgentEvent = AgentStreamEvent;
+
+/// A single SSE event from a mission run stream.
+/// Alias for [`AgentStreamEvent`] since both use the same SSE format.
+pub type MissionEvent = AgentStreamEvent;
 
 pin_project! {
     /// An async stream of [`AgentStreamEvent`]s from an agent or mission SSE response.

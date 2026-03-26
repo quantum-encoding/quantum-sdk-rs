@@ -194,6 +194,34 @@ pub struct VoiceLibraryQuery {
     pub use_case: Option<String>,
 }
 
+/// Request body for adding a shared voice from the library.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AddVoiceFromLibraryRequest {
+    /// Public owner identifier.
+    pub public_owner_id: String,
+
+    /// Voice identifier in the library.
+    pub voice_id: String,
+
+    /// Optional display name (defaults to the library name).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+/// Request body for instant voice cloning from audio samples (JSON path).
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct CloneVoiceRequest {
+    /// Display name for the cloned voice.
+    pub name: String,
+
+    /// Description of the voice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Base64-encoded audio files for cloning.
+    pub audio_samples: Vec<String>,
+}
+
 /// Response from adding a voice from the library.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AddVoiceFromLibraryResponse {

@@ -1,5 +1,5 @@
 use reqwest::header::CONTENT_TYPE;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
@@ -20,6 +20,17 @@ pub struct ContactRequest {
 
     /// Message body.
     pub message: String,
+}
+
+/// Response from the contact form endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContactResponse {
+    /// Status message (e.g. "ok", "sent").
+    pub status: String,
+
+    /// Optional detail message.
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 impl Client {

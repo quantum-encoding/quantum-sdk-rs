@@ -130,6 +130,41 @@ pub struct AnimationPostProcess {
     pub fps: Option<i32>,
 }
 
+/// Backwards-compatible alias for [`AnimationPostProcess`].
+pub type PostProcess = AnimationPostProcess;
+
+/// Request for 3D model generation (alias for [`crate::image::ImageRequest`]
+/// which includes Meshy 3D fields like topology, target_polycount, etc.).
+pub type Generate3DRequest = crate::image::ImageRequest;
+
+/// URLs for basic pre-built animations from a rigging result.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BasicAnimations {
+    /// Walking animation in GLB format.
+    #[serde(default)]
+    pub walking_glb: String,
+
+    /// Walking animation in FBX format.
+    #[serde(default)]
+    pub walking_fbx: String,
+
+    /// Running animation in GLB format.
+    #[serde(default)]
+    pub running_glb: String,
+
+    /// Running animation in FBX format.
+    #[serde(default)]
+    pub running_fbx: String,
+
+    /// Idle animation in GLB format.
+    #[serde(default)]
+    pub idle_glb: String,
+
+    /// Idle animation in FBX format.
+    #[serde(default)]
+    pub idle_fbx: String,
+}
+
 // ── Convenience methods ──
 
 impl Client {

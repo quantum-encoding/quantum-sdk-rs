@@ -110,6 +110,16 @@ pub struct BatchJobsResponse {
     pub jobs: Vec<BatchJobInfo>,
 }
 
+/// Alias for [`BatchJob`] — a single input in a batch submission.
+pub type BatchJobInput = BatchJob;
+
+/// Request body for batch submission (wraps a list of jobs).
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct BatchSubmitRequest {
+    /// Jobs to submit.
+    pub jobs: Vec<BatchJob>,
+}
+
 impl Client {
     /// Submit a batch of jobs for processing.
     ///
