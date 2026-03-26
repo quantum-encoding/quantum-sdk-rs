@@ -106,7 +106,7 @@ pub struct StudioClip {
 
 /// Request body for HeyGen studio video creation.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct StudioVideoRequest {
+pub struct VideoStudioRequest {
     /// Video title.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -127,9 +127,12 @@ pub struct StudioVideoRequest {
 // HeyGen Translate
 // ---------------------------------------------------------------------------
 
+/// Backwards-compatible alias.
+pub type StudioVideoRequest = VideoStudioRequest;
+
 /// Request body for video translation.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct TranslateRequest {
+pub struct VideoTranslateRequest {
     /// URL of the video to translate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_url: Option<String>,
@@ -145,6 +148,9 @@ pub struct TranslateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_language: Option<String>,
 }
+
+/// Backwards-compatible alias.
+pub type TranslateRequest = VideoTranslateRequest;
 
 // ---------------------------------------------------------------------------
 // HeyGen Photo Avatar
@@ -308,17 +314,17 @@ impl Client {
     }
 
     /// Creates a HeyGen studio video from clips.
-    pub async fn video_studio(&self, req: &StudioVideoRequest) -> Result<JobResponse> {
+    pub async fn video_studio(&self, req: &VideoStudioRequest) -> Result<JobResponse> {
         let (resp, _meta) = self
-            .post_json::<StudioVideoRequest, JobResponse>("/qai/v1/video/studio", req)
+            .post_json::<VideoStudioRequest, JobResponse>("/qai/v1/video/studio", req)
             .await?;
         Ok(resp)
     }
 
     /// Translates a video into another language (HeyGen).
-    pub async fn video_translate(&self, req: &TranslateRequest) -> Result<JobResponse> {
+    pub async fn video_translate(&self, req: &VideoTranslateRequest) -> Result<JobResponse> {
         let (resp, _meta) = self
-            .post_json::<TranslateRequest, JobResponse>("/qai/v1/video/translate", req)
+            .post_json::<VideoTranslateRequest, JobResponse>("/qai/v1/video/translate", req)
             .await?;
         Ok(resp)
     }

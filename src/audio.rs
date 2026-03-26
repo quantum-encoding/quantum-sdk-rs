@@ -7,7 +7,7 @@ use crate::error::Result;
 
 /// Request body for text-to-speech.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct TtsRequest {
+pub struct TextToSpeechRequest {
     /// TTS model (e.g. "tts-1", "eleven_multilingual_v2", "grok-3-tts").
     pub model: String,
 
@@ -27,9 +27,12 @@ pub struct TtsRequest {
     pub speed: Option<f64>,
 }
 
+/// Backwards-compatible alias.
+pub type TtsRequest = TextToSpeechRequest;
+
 /// Response from text-to-speech.
 #[derive(Debug, Clone, Deserialize)]
-pub struct TtsResponse {
+pub struct TextToSpeechResponse {
     /// Base64-encoded audio data.
     pub audio_base64: String,
 
@@ -51,9 +54,12 @@ pub struct TtsResponse {
     pub request_id: String,
 }
 
+/// Backwards-compatible alias.
+pub type TtsResponse = TextToSpeechResponse;
+
 /// Request body for speech-to-text.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct SttRequest {
+pub struct SpeechToTextRequest {
     /// STT model (e.g. "whisper-1", "scribe_v2").
     pub model: String,
 
@@ -69,9 +75,12 @@ pub struct SttRequest {
     pub language: Option<String>,
 }
 
+/// Backwards-compatible alias.
+pub type SttRequest = SpeechToTextRequest;
+
 /// Response from speech-to-text.
 #[derive(Debug, Clone, Deserialize)]
-pub struct SttResponse {
+pub struct SpeechToTextResponse {
     /// Transcribed text.
     pub text: String,
 
@@ -86,6 +95,9 @@ pub struct SttResponse {
     #[serde(default)]
     pub request_id: String,
 }
+
+/// Backwards-compatible alias.
+pub type SttResponse = SpeechToTextResponse;
 
 /// Request body for music generation.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -307,7 +319,7 @@ pub struct SpeechToSpeechRequest {
 
 /// Request body for voice isolation.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct IsolateRequest {
+pub struct IsolateVoiceRequest {
     /// Base64-encoded audio to isolate voice from.
     pub audio_base64: String,
 
@@ -316,9 +328,12 @@ pub struct IsolateRequest {
     pub output_format: Option<String>,
 }
 
+/// Backwards-compatible alias.
+pub type IsolateRequest = IsolateVoiceRequest;
+
 /// Request body for voice remixing.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct RemixRequest {
+pub struct RemixVoiceRequest {
     /// Base64-encoded source audio.
     pub audio_base64: String,
 
@@ -334,6 +349,9 @@ pub struct RemixRequest {
     #[serde(rename = "format", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
 }
+
+/// Backwards-compatible alias.
+pub type RemixRequest = RemixVoiceRequest;
 
 /// Request body for audio dubbing.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -737,9 +755,9 @@ pub struct ListFinetunesResponse {
 
 impl Client {
     /// Generates speech from text.
-    pub async fn speak(&self, req: &TtsRequest) -> Result<TtsResponse> {
+    pub async fn speak(&self, req: &TextToSpeechRequest) -> Result<TextToSpeechResponse> {
         let (mut resp, meta) = self
-            .post_json::<TtsRequest, TtsResponse>("/qai/v1/audio/tts", req)
+            .post_json::<TextToSpeechRequest, TextToSpeechResponse>("/qai/v1/audio/tts", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
@@ -751,9 +769,9 @@ impl Client {
     }
 
     /// Converts speech to text.
-    pub async fn transcribe(&self, req: &SttRequest) -> Result<SttResponse> {
+    pub async fn transcribe(&self, req: &SpeechToTextRequest) -> Result<SpeechToTextResponse> {
         let (mut resp, meta) = self
-            .post_json::<SttRequest, SttResponse>("/qai/v1/audio/stt", req)
+            .post_json::<SpeechToTextRequest, SpeechToTextResponse>("/qai/v1/audio/stt", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
@@ -830,9 +848,9 @@ impl Client {
     }
 
     /// Isolates voice from background noise and music.
-    pub async fn isolate_voice(&self, req: &IsolateRequest) -> Result<AudioResponse> {
+    pub async fn isolate_voice(&self, req: &IsolateVoiceRequest) -> Result<AudioResponse> {
         let (mut resp, meta) = self
-            .post_json::<IsolateRequest, AudioResponse>("/qai/v1/audio/isolate", req)
+            .post_json::<IsolateVoiceRequest, AudioResponse>("/qai/v1/audio/isolate", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
@@ -844,9 +862,9 @@ impl Client {
     }
 
     /// Remixes audio with a different voice.
-    pub async fn remix_voice(&self, req: &RemixRequest) -> Result<AudioResponse> {
+    pub async fn remix_voice(&self, req: &RemixVoiceRequest) -> Result<AudioResponse> {
         let (mut resp, meta) = self
-            .post_json::<RemixRequest, AudioResponse>("/qai/v1/audio/remix", req)
+            .post_json::<RemixVoiceRequest, AudioResponse>("/qai/v1/audio/remix", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;

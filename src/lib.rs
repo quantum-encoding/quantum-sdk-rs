@@ -72,21 +72,31 @@ pub use image::{
 // Video types
 pub use video::{
     Avatar, AvatarsResponse, DigitalTwinRequest, GeneratedVideo, HeyGenVoice,
-    HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, StudioClip, StudioVideoRequest,
-    TranslateRequest, VideoRequest, VideoResponse, VideoTemplate, VideoTemplatesResponse,
+    HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, StudioClip,
+    VideoStudioRequest, StudioVideoRequest,
+    VideoTranslateRequest, TranslateRequest,
+    VideoRequest, VideoResponse, VideoTemplate, VideoTemplatesResponse,
 };
 
 // Audio types
 pub use audio::{
     AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse, DialogueRequest,
     DialogueResponse, DialogueTurn, DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest,
-    ElevenMusicResponse, FinetuneInfo, IsolateRequest, IsolateVoiceResponse, ListFinetunesResponse,
+    ElevenMusicResponse, FinetuneInfo,
+    IsolateVoiceRequest, IsolateRequest,
+    IsolateVoiceResponse, ListFinetunesResponse,
     MusicAdvancedClip, MusicAdvancedRequest, MusicAdvancedResponse, MusicClip,
     MusicFinetuneCreateRequest, MusicFinetuneInfo, MusicFinetuneListResponse, MusicRequest,
-    MusicResponse, MusicSection, RemixRequest, RemixVoiceResponse, SoundEffectRequest,
+    MusicResponse, MusicSection,
+    RemixVoiceRequest, RemixRequest,
+    RemixVoiceResponse, SoundEffectRequest,
     SoundEffectResponse, SpeechToSpeechRequest, SpeechToSpeechResponse, StarfishTTSRequest,
-    StarfishTTSResponse, SttRequest, SttResponse, TtsRequest, TtsResponse, VoiceDesignRequest,
-    VoiceDesignResponse, VoicePreview,
+    StarfishTTSResponse,
+    SpeechToTextRequest, SttRequest,
+    SpeechToTextResponse, SttResponse,
+    TextToSpeechRequest, TtsRequest,
+    TextToSpeechResponse, TtsResponse,
+    VoiceDesignRequest, VoiceDesignResponse, VoicePreview,
 };
 
 // Account types
@@ -142,16 +152,31 @@ pub use embeddings::{EmbedRequest, EmbedResponse};
 
 // Document types
 pub use documents::{
-    ChunkRequest, ChunkResponse, DocumentChunk, DocumentRequest, DocumentResponse, ProcessRequest,
-    ProcessResponse,
+    ChunkDocumentRequest, ChunkRequest,
+    ChunkDocumentResponse, ChunkResponse,
+    DocumentChunk, DocumentRequest, DocumentResponse,
+    ProcessDocumentRequest, ProcessRequest,
+    ProcessDocumentResponse, ProcessResponse,
 };
 
 // RAG types
 pub use rag::{
     Collection, CollectionDocument, CollectionSearchRequest, CollectionSearchResult,
     CollectionUploadResult, CreateCollectionRequest, RagCorpus, RagResult, RagSearchRequest,
-    RagSearchResponse, SurrealRagProvider, SurrealRagProvidersResponse, SurrealRagResult,
+    RagSearchResponse,
+    SurrealRagProviderInfo, SurrealRagProvider,
+    SurrealRagProvidersResponse, SurrealRagResult,
     SurrealRagSearchRequest, SurrealRagSearchResponse,
+};
+
+// Search types
+pub use search::{
+    Infobox, InfoboxResult,
+    Discussion, DiscussionResult,
+    NewsResult, SearchAnswerCitation, SearchAnswerChoice, SearchAnswerMessage,
+    SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk, SearchContextRequest,
+    SearchContextResponse, SearchContextSource, VideoResult, WebResult, WebSearchRequest,
+    WebSearchResponse,
 };
 
 // Model types

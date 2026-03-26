@@ -43,7 +43,7 @@ pub struct DocumentResponse {
 
 /// Request body for document chunking.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct ChunkRequest {
+pub struct ChunkDocumentRequest {
     /// Base64-encoded file content.
     pub file_base64: String,
 
@@ -73,9 +73,12 @@ pub struct DocumentChunk {
     pub token_count: Option<i32>,
 }
 
+/// Backwards-compatible alias.
+pub type ChunkRequest = ChunkDocumentRequest;
+
 /// Response from document chunking.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ChunkResponse {
+pub struct ChunkDocumentResponse {
     /// Document chunks.
     pub chunks: Vec<DocumentChunk>,
 
@@ -92,9 +95,12 @@ pub struct ChunkResponse {
     pub request_id: String,
 }
 
+/// Backwards-compatible alias.
+pub type ChunkResponse = ChunkDocumentResponse;
+
 /// Request body for document processing (combined extraction + analysis).
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct ProcessRequest {
+pub struct ProcessDocumentRequest {
     /// Base64-encoded file content.
     pub file_base64: String,
 
@@ -110,9 +116,12 @@ pub struct ProcessRequest {
     pub model: Option<String>,
 }
 
+/// Backwards-compatible alias.
+pub type ProcessRequest = ProcessDocumentRequest;
+
 /// Response from document processing.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ProcessResponse {
+pub struct ProcessDocumentResponse {
     /// Processed content / analysis result.
     pub content: String,
 
@@ -128,6 +137,9 @@ pub struct ProcessResponse {
     #[serde(default)]
     pub request_id: String,
 }
+
+/// Backwards-compatible alias.
+pub type ProcessResponse = ProcessDocumentResponse;
 
 impl Client {
     /// Extracts text content from a document (PDF, image, etc.).
@@ -145,9 +157,9 @@ impl Client {
     }
 
     /// Splits a document into chunks suitable for embeddings or RAG.
-    pub async fn chunk_document(&self, req: &ChunkRequest) -> Result<ChunkResponse> {
+    pub async fn chunk_document(&self, req: &ChunkDocumentRequest) -> Result<ChunkDocumentResponse> {
         let (mut resp, meta) = self
-            .post_json::<ChunkRequest, ChunkResponse>("/qai/v1/documents/chunk", req)
+            .post_json::<ChunkDocumentRequest, ChunkDocumentResponse>("/qai/v1/documents/chunk", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
@@ -159,9 +171,9 @@ impl Client {
     }
 
     /// Processes a document with AI (extraction + analysis in one step).
-    pub async fn process_document(&self, req: &ProcessRequest) -> Result<ProcessResponse> {
+    pub async fn process_document(&self, req: &ProcessDocumentRequest) -> Result<ProcessDocumentResponse> {
         let (mut resp, meta) = self
-            .post_json::<ProcessRequest, ProcessResponse>("/qai/v1/documents/process", req)
+            .post_json::<ProcessDocumentRequest, ProcessDocumentResponse>("/qai/v1/documents/process", req)
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;

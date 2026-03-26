@@ -106,7 +106,7 @@ pub struct VideoResult {
 
 /// An infobox (knowledge panel) result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InfoboxResult {
+pub struct Infobox {
     /// Infobox title.
     pub title: String,
 
@@ -119,9 +119,12 @@ pub struct InfoboxResult {
     pub url: Option<String>,
 }
 
+/// Backwards-compatible alias.
+pub type InfoboxResult = Infobox;
+
 /// A discussion / forum result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscussionResult {
+pub struct Discussion {
     /// Discussion title.
     pub title: String,
 
@@ -140,6 +143,9 @@ pub struct DiscussionResult {
     #[serde(default)]
     pub forum: Option<String>,
 }
+
+/// Backwards-compatible alias.
+pub type DiscussionResult = Discussion;
 
 /// Response from the web search endpoint.
 #[derive(Debug, Clone, Deserialize)]
@@ -161,11 +167,11 @@ pub struct WebSearchResponse {
 
     /// Infobox / knowledge panel entries.
     #[serde(default)]
-    pub infobox: Vec<InfoboxResult>,
+    pub infobox: Vec<Infobox>,
 
     /// Discussion / forum results.
     #[serde(default)]
-    pub discussions: Vec<DiscussionResult>,
+    pub discussions: Vec<Discussion>,
 }
 
 // ---------------------------------------------------------------------------

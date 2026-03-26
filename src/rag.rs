@@ -142,7 +142,7 @@ pub struct SurrealRagResult {
 
 /// A SurrealDB RAG provider.
 #[derive(Debug, Clone, Deserialize)]
-pub struct SurrealRagProvider {
+pub struct SurrealRagProviderInfo {
     /// Provider identifier (e.g. "xai", "claude").
     pub provider: String,
 
@@ -151,10 +151,13 @@ pub struct SurrealRagProvider {
     pub chunk_count: Option<i64>,
 }
 
+/// Backwards-compatible alias.
+pub type SurrealRagProvider = SurrealRagProviderInfo;
+
 /// Response from listing SurrealDB RAG providers.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurrealRagProvidersResponse {
-    pub providers: Vec<SurrealRagProvider>,
+    pub providers: Vec<SurrealRagProviderInfo>,
 }
 
 // ── xAI Collection Proxy Types ──────────────────────────────────────────────
