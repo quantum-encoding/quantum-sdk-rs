@@ -1,6 +1,6 @@
 [package]
 name = "quantum-sdk"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 description = "Rust client SDK for the Quantum AI API"
 license = "MIT"
