@@ -41,6 +41,7 @@ pub mod keys;
 pub mod models;
 pub mod rag;
 pub mod realtime;
+pub mod scraper;
 pub mod search;
 pub mod session;
 pub mod video;
@@ -176,6 +177,12 @@ pub use rag::{
     SurrealRagProviderInfo, SurrealRagProvider,
     SurrealRagProvidersResponse, SurrealRagResult,
     SurrealRagSearchRequest, SurrealRagSearchResponse,
+};
+
+// Scraper types
+pub use scraper::{
+    ScrapeRequest, ScrapeResponse, ScrapeTarget, ScreenshotJobResponse, ScreenshotRequest,
+    ScreenshotResponse, ScreenshotResult, ScreenshotURL,
 };
 
 // Search types
