@@ -41,6 +41,28 @@ pub struct VoicesResponse {
     pub voices: Vec<Voice>,
 }
 
+/// Describes an available voice with detail info (sdk-graph canonical name).
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceInfo {
+    /// Voice identifier.
+    pub voice_id: String,
+
+    /// Human-readable voice name.
+    pub name: String,
+
+    /// Voice category (e.g. "premade", "cloned").
+    #[serde(default)]
+    pub category: String,
+
+    /// Voice description.
+    #[serde(default)]
+    pub description: Option<String>,
+
+    /// Preview audio URL.
+    #[serde(default)]
+    pub preview_url: Option<String>,
+}
+
 /// A file to include in a voice clone request.
 #[derive(Debug, Clone)]
 pub struct CloneVoiceFile {

@@ -52,7 +52,7 @@ pub use error::{ApiError, Error, Result};
 
 // Chat types
 pub use chat::{
-    ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, ContentBlock,
+    ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation, ContentBlock,
     StreamDelta, StreamEvent, StreamToolUse,
 };
 
@@ -78,11 +78,15 @@ pub use video::{
 
 // Audio types
 pub use audio::{
-    AlignRequest, AlignResponse, AlignmentSegment, AudioResponse, DialogueRequest, DialogueTurn,
-    DubRequest, ElevenMusicClip, ElevenMusicRequest, ElevenMusicResponse, FinetuneInfo, IsolateRequest,
-    ListFinetunesResponse, MusicClip, MusicRequest, MusicResponse, MusicSection, RemixRequest,
-    SoundEffectRequest, SoundEffectResponse, SpeechToSpeechRequest, StarfishTTSRequest,
-    SttRequest, SttResponse, TtsRequest, TtsResponse, VoiceDesignRequest,
+    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse, DialogueRequest,
+    DialogueResponse, DialogueTurn, DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest,
+    ElevenMusicResponse, FinetuneInfo, IsolateRequest, IsolateVoiceResponse, ListFinetunesResponse,
+    MusicAdvancedClip, MusicAdvancedRequest, MusicAdvancedResponse, MusicClip,
+    MusicFinetuneCreateRequest, MusicFinetuneInfo, MusicFinetuneListResponse, MusicRequest,
+    MusicResponse, MusicSection, RemixRequest, RemixVoiceResponse, SoundEffectRequest,
+    SoundEffectResponse, SpeechToSpeechRequest, SpeechToSpeechResponse, StarfishTTSRequest,
+    StarfishTTSResponse, SttRequest, SttResponse, TtsRequest, TtsResponse, VoiceDesignRequest,
+    VoiceDesignResponse, VoicePreview,
 };
 
 // Account types
@@ -107,7 +111,7 @@ pub use credits::{
 };
 
 // Jobs types
-pub use jobs::{JobCreateRequest, JobCreateResponse, JobStatusResponse, JobSummary, ListJobsResponse};
+pub use jobs::{JobCreateRequest, JobCreateResponse, JobStatusResponse, JobStreamEvent, JobSummary, ListJobsResponse};
 
 // Keys types
 pub use keys::{CreateKeyRequest, CreateKeyResponse, KeyDetails, ListKeysResponse, StatusResponse};
@@ -122,7 +126,7 @@ pub use compute::{
 // Voices types
 pub use voices::{
     AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceResponse, SharedVoice,
-    SharedVoicesResponse, Voice, VoiceLibraryQuery, VoicesResponse,
+    SharedVoicesResponse, Voice, VoiceInfo, VoiceLibraryQuery, VoicesResponse,
 };
 
 // 3D Mesh pipeline types

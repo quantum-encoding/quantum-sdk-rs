@@ -380,11 +380,37 @@ pub struct AlignmentSegment {
     pub end: f64,
 }
 
+/// A single word with timing information from forced alignment.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlignedWord {
+    /// Word text.
+    pub text: String,
+
+    /// Start time in seconds.
+    pub start_time: f64,
+
+    /// End time in seconds.
+    pub end_time: f64,
+
+    /// Alignment confidence score.
+    #[serde(default)]
+    pub confidence: f64,
+}
+
 /// Response from audio alignment.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AlignResponse {
     /// Aligned segments.
+    #[serde(default)]
     pub segments: Vec<AlignmentSegment>,
+
+    /// Word-level alignment.
+    #[serde(default)]
+    pub alignment: Vec<AlignedWord>,
+
+    /// Model used.
+    #[serde(default)]
+    pub model: String,
 
     /// Total cost in ticks.
     #[serde(default)]
@@ -393,6 +419,191 @@ pub struct AlignResponse {
     /// Unique request identifier.
     #[serde(default)]
     pub request_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Typed response structs (parity with Go SDK)
+// ---------------------------------------------------------------------------
+
+/// Response from dialogue generation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DialogueResponse {
+    pub audio_base64: String,
+    pub format: String,
+    #[serde(default)]
+    pub size_bytes: i64,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from speech-to-speech conversion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SpeechToSpeechResponse {
+    pub audio_base64: String,
+    pub format: String,
+    #[serde(default)]
+    pub size_bytes: i64,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from voice isolation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IsolateVoiceResponse {
+    pub audio_base64: String,
+    pub format: String,
+    #[serde(default)]
+    pub size_bytes: i64,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from voice remixing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemixVoiceResponse {
+    #[serde(default)]
+    pub audio_base64: Option<String>,
+    pub format: String,
+    #[serde(default)]
+    pub size_bytes: i64,
+    #[serde(default)]
+    pub voice_id: Option<String>,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from dubbing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DubResponse {
+    pub dubbing_id: String,
+    pub audio_base64: String,
+    pub format: String,
+    #[serde(default)]
+    pub target_lang: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub processing_time_seconds: f64,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Response from voice design.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceDesignResponse {
+    pub previews: Vec<VoicePreview>,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// A single voice preview from voice design.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoicePreview {
+    pub generated_voice_id: String,
+    pub audio_base64: String,
+    pub format: String,
+}
+
+/// Response from Starfish TTS.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StarfishTTSResponse {
+    #[serde(default)]
+    pub audio_base64: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    pub format: String,
+    #[serde(default)]
+    pub size_bytes: i64,
+    #[serde(default)]
+    pub duration: f64,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Advanced music generation request.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MusicAdvancedRequest {
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finetune_id: Option<String>,
+}
+
+/// A single clip from advanced music generation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicAdvancedClip {
+    #[serde(default)]
+    pub base64: String,
+    #[serde(default)]
+    pub format: String,
+    #[serde(default)]
+    pub size: i64,
+}
+
+/// Response from advanced music generation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicAdvancedResponse {
+    #[serde(default)]
+    pub clips: Vec<MusicAdvancedClip>,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Music finetune info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MusicFinetuneInfo {
+    pub finetune_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub model_id: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// Response from listing music finetunes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MusicFinetuneListResponse {
+    pub finetunes: Vec<MusicFinetuneInfo>,
+}
+
+/// Request to create a music finetune.
+#[derive(Debug, Clone, Serialize)]
+pub struct MusicFinetuneCreateRequest {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub samples: Vec<String>,
 }
 
 /// Request body for voice design (generating a voice from a description).

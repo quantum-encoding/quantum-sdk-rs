@@ -176,9 +176,9 @@ pub struct ChatResponse {
     #[serde(default)]
     pub stop_reason: String,
 
-    /// Citation URLs from web search (when search is enabled via provider_options).
+    /// Citations from web search (when search is enabled via provider_options).
     #[serde(default)]
-    pub citations: Vec<String>,
+    pub citations: Vec<Citation>,
 
     /// Total cost from the X-QAI-Cost-Ticks header.
     #[serde(skip)]
@@ -217,6 +217,26 @@ impl ChatResponse {
             .filter(|b| b.block_type == "tool_use")
             .collect()
     }
+}
+
+/// A source reference from web search grounding.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Citation {
+    /// Title of the cited source.
+    #[serde(default)]
+    pub title: String,
+
+    /// URL of the cited source.
+    #[serde(default)]
+    pub url: String,
+
+    /// Relevant text snippet from the source.
+    #[serde(default)]
+    pub text: String,
+
+    /// Position in the response.
+    #[serde(default)]
+    pub index: i32,
 }
 
 /// Token counts and cost for a chat response.

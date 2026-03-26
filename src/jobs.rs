@@ -57,6 +57,38 @@ pub struct ListJobsResponse {
     pub jobs: Vec<JobSummary>,
 }
 
+/// A single SSE event from a job stream.
+#[derive(Debug, Clone, Deserialize)]
+pub struct JobStreamEvent {
+    /// Event type (e.g. "progress", "complete", "error").
+    #[serde(rename = "type", default)]
+    pub event_type: String,
+
+    /// Job identifier.
+    #[serde(default)]
+    pub job_id: Option<String>,
+
+    /// Job status.
+    #[serde(default)]
+    pub status: Option<String>,
+
+    /// Job result (on completion).
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
+
+    /// Error message (on failure).
+    #[serde(default)]
+    pub error: Option<String>,
+
+    /// Total cost in ticks.
+    #[serde(default)]
+    pub cost_ticks: i64,
+
+    /// Completion timestamp.
+    #[serde(default)]
+    pub completed_at: Option<String>,
+}
+
 impl Client {
     /// Creates an async job. Returns the job ID for polling.
     pub async fn create_job(&self, req: &JobCreateRequest) -> Result<JobCreateResponse> {
