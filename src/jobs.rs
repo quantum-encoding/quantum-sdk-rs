@@ -21,6 +21,12 @@ pub struct JobCreateResponse {
     pub job_id: String,
     #[serde(default)]
     pub status: String,
+    #[serde(rename = "type", default)]
+    pub job_type: Option<String>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 /// Response from job status check.
@@ -28,12 +34,22 @@ pub struct JobCreateResponse {
 pub struct JobStatusResponse {
     pub job_id: String,
     pub status: String,
+    #[serde(rename = "type", default)]
+    pub job_type: Option<String>,
     #[serde(default)]
     pub result: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<String>,
     #[serde(default)]
     pub cost_ticks: i64,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub completed_at: Option<String>,
 }
 
 /// Summary of a job in the list response.
@@ -216,9 +232,14 @@ impl Client {
         Ok(JobStatusResponse {
             job_id: job_id.to_string(),
             status: "timeout".to_string(),
+            job_type: None,
             result: None,
             error: Some(format!("Job polling timed out after {max_attempts} attempts")),
             cost_ticks: 0,
+            request_id: None,
+            created_at: None,
+            started_at: None,
+            completed_at: None,
         })
     }
 

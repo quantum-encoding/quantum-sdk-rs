@@ -58,6 +58,10 @@ pub struct AgentRequest {
     /// System prompt for the conductor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
+
+    /// Context configuration for session management.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_config: Option<crate::session::ContextConfig>,
 }
 
 // ---------------------------------------------------------------------------

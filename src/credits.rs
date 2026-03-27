@@ -29,6 +29,10 @@ pub struct CreditPack {
     /// Description.
     #[serde(default)]
     pub description: Option<String>,
+
+    /// Whether this is the popular/recommended pack.
+    #[serde(default)]
+    pub popular: Option<bool>,
 }
 
 /// Response from listing credit packs.

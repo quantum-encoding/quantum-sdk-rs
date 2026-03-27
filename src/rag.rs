@@ -158,6 +158,8 @@ pub type SurrealRagProvider = SurrealRagProviderInfo;
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurrealRagProvidersResponse {
     pub providers: Vec<SurrealRagProviderInfo>,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 // ── xAI Collection Proxy Types ──────────────────────────────────────────────

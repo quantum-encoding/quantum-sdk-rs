@@ -88,11 +88,19 @@ pub struct PricingEntry {
     #[serde(default)]
     pub display_name: String,
     #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub context_window: Option<String>,
+    #[serde(default)]
     pub input_per_million: f64,
     #[serde(default)]
     pub output_per_million: f64,
     #[serde(default)]
     pub cached_per_million: f64,
+    #[serde(default)]
+    pub per_unit_price: Option<f64>,
+    #[serde(default)]
+    pub price_unit: Option<String>,
 }
 
 /// Pricing response (map of model_id → entry).

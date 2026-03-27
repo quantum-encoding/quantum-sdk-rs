@@ -137,9 +137,20 @@ pub struct ContentBlock {
     pub input: Option<HashMap<String, serde_json::Value>>,
 
     /// Gemini thought signature — must be echoed back with tool results.
-    /// This is an opaque base64-encoded blob from Gemini 3.x models.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought_signature: Option<String>,
+
+    /// Base64-encoded data for file/image content blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+
+    /// Filename for file content blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+
+    /// MIME type for file/image content blocks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
 }
 
 /// Defines a function the model can call.

@@ -48,6 +48,10 @@ pub struct ScrapeTarget {
     /// RAG provider name for auto-ingest.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ingest: Option<String>,
+
+    /// OpenAPI spec URL (for type=openapi targets).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_url: Option<String>,
 }
 
 /// Request body for submitting a scrape job.
