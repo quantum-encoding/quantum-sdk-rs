@@ -6,9 +6,11 @@ use crate::error::Result;
 /// Response from balance check.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BalanceResponse {
-    pub user_id: String,
-    pub credit_ticks: i64,
-    pub credit_usd: f64,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    pub balance_ticks: i64,
+    pub balance_usd: f64,
+    #[serde(default)]
     pub ticks_per_usd: i64,
 }
 

@@ -14,17 +14,17 @@ pub struct CreditPack {
     /// Unique pack identifier.
     pub id: String,
 
-    /// Display name (e.g. "Starter Pack").
+    /// Display label (e.g. "$5 Starter").
     #[serde(default)]
-    pub name: Option<String>,
+    pub label: String,
 
     /// Price in USD.
     #[serde(default)]
-    pub price_usd: f64,
+    pub amount_usd: f64,
 
     /// Number of credit ticks included.
     #[serde(default)]
-    pub credit_ticks: i64,
+    pub ticks: i64,
 
     /// Description.
     #[serde(default)]
