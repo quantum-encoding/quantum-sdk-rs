@@ -9,13 +9,25 @@ use crate::error::Result;
 /// Configuration for session context management.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContextConfig {
-    /// Maximum number of tokens to retain before compaction.
+    /// Token threshold that triggers automatic compaction.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<i64>,
+    pub compact_at_tokens: Option<i64>,
 
-    /// Whether to enable automatic context compaction.
+    /// Number of recent tool call/result pairs to keep uncompacted.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_compact: Option<bool>,
+    pub keep_recent_tool_results: Option<i32>,
+
+    /// Strip thinking blocks from older assistant turns.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_thinking: Option<bool>,
+
+    /// Summarization strategy: "plan_and_tools", "full", "brief".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summarize_strategy: Option<String>,
+
+    /// Model to use for summarization (default: gemini-2.5-flash).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summarize_model: Option<String>,
 }
 
 /// A tool result to feed back into the session.

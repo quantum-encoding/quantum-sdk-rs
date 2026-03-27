@@ -308,7 +308,11 @@ pub struct SpeechToSpeechRequest {
     /// Base64-encoded source audio.
     pub audio_base64: String,
 
-    /// Target voice.
+    /// Target voice identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_id: Option<String>,
+
+    /// Target voice name (alternative to voice_id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
 
@@ -357,18 +361,31 @@ pub type RemixRequest = RemixVoiceRequest;
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct DubRequest {
     /// Base64-encoded source audio or video.
-    pub audio_base64: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_base64: Option<String>,
 
     /// Original filename (helps detect format).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
 
+    /// URL to source media (alternative to audio_base64).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+
     /// Target language (BCP-47 code, e.g. "es", "de").
-    pub target_language: String,
+    pub target_lang: String,
 
     /// Source language (auto-detected if omitted).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_language: Option<String>,
+    pub source_lang: Option<String>,
+
+    /// Number of speakers (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_speakers: Option<i32>,
+
+    /// Enable highest quality processing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highest_resolution: Option<bool>,
 }
 
 /// Request body for audio alignment / forced alignment.
@@ -646,7 +663,11 @@ pub struct StarfishTTSRequest {
     /// Text to synthesise.
     pub text: String,
 
-    /// Voice identifier.
+    /// HeyGen voice identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_id: Option<String>,
+
+    /// Voice name (alternative to voice_id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
 
@@ -654,9 +675,21 @@ pub struct StarfishTTSRequest {
     #[serde(rename = "format", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
 
+    /// Input type (e.g. "text", "ssml").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_type: Option<String>,
+
     /// Speech speed multiplier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f64>,
+
+    /// BCP-47 language code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Locale code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
