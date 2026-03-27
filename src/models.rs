@@ -15,11 +15,25 @@ pub struct ModelInfo {
     /// Human-readable model name.
     pub display_name: String,
 
-    /// Cost per million input tokens in USD.
+    /// Model category (e.g. "Text", "Image", "Audio", "Video", "Embedding").
+    #[serde(default)]
+    pub category: Option<String>,
+
+    /// Cost per million input tokens in USD (text models).
+    #[serde(default)]
     pub input_per_million: f64,
 
-    /// Cost per million output tokens in USD.
+    /// Cost per million output tokens in USD (text models).
+    #[serde(default)]
     pub output_per_million: f64,
+
+    /// Per-unit price for non-token models (image/audio/video).
+    #[serde(default)]
+    pub per_unit_price: Option<f64>,
+
+    /// Price unit description (e.g. "per image", "per second").
+    #[serde(default)]
+    pub price_unit: Option<String>,
 }
 
 /// Pricing details for a model.
