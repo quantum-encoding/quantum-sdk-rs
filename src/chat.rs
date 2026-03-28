@@ -9,6 +9,25 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::error::Result;
 
+/// Deserialize null as empty Vec (Gemini sometimes returns null for array fields).
+fn null_as_empty_vec<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<Vec<T>>::deserialize(deserializer).map(|v| v.unwrap_or_default())
+}
+
+/// Deserialize null as None for Option<Vec<T>> fields.
+fn deserialize_opt_vec<'de, D, T>(deserializer: D) -> std::result::Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // null → None, [] → Some([]), [...] → Some([...])
+    Ok(Option::<Vec<T>>::deserialize(deserializer).unwrap_or(None))
+}
+
 /// Request body for text generation.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChatRequest {
@@ -51,7 +70,7 @@ pub struct ChatMessage {
 
     /// Structured content for assistant messages with tool calls.
     /// When present, takes precedence over `content`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_opt_vec", default)]
     pub content_blocks: Option<Vec<ContentBlock>>,
 
     /// Required when role is "tool" — references the tool_use ID.
@@ -177,7 +196,7 @@ pub struct ChatResponse {
     pub model: String,
 
     /// List of content blocks (text, thinking, tool_use).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub content: Vec<ContentBlock>,
 
     /// Token counts and cost.
@@ -188,7 +207,7 @@ pub struct ChatResponse {
     pub stop_reason: String,
 
     /// Citations from web search (when search is enabled via provider_options).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub citations: Vec<Citation>,
 
     /// Total cost from the X-QAI-Cost-Ticks header.
