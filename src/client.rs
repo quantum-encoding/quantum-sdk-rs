@@ -285,6 +285,47 @@ impl Client {
         Ok((result, meta))
     }
 
+    /// Sends a POST request with an empty body and deserializes the response.
+    pub async fn post_json_empty<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<(Resp, ResponseMeta)> {
+        let url = format!("{}{}", self.inner.base_url, path);
+        let resp = self.inner.http.post(&url)
+            .header("content-type", "application/json")
+            .body("{}")
+            .send()
+            .await?;
+
+        let meta = parse_response_meta(&resp);
+
+        if !resp.status().is_success() {
+            return Err(parse_api_error(resp, &meta.request_id).await);
+        }
+
+        let result: Resp = resp.json().await?;
+        Ok((result, meta))
+    }
+
+    /// Sends a PUT request with a JSON body and deserializes the response.
+    pub async fn put_json<Req: Serialize, Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Req,
+    ) -> Result<(Resp, ResponseMeta)> {
+        let url = format!("{}{}", self.inner.base_url, path);
+        let resp = self.inner.http.put(&url).json(body).send().await?;
+
+        let meta = parse_response_meta(&resp);
+
+        if !resp.status().is_success() {
+            return Err(parse_api_error(resp, &meta.request_id).await);
+        }
+
+        let result: Resp = resp.json().await?;
+        Ok((result, meta))
+    }
+
     /// Sends a multipart POST request and deserializes the response.
     pub async fn post_multipart<Resp: DeserializeOwned>(
         &self,

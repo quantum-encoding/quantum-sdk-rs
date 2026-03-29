@@ -38,13 +38,16 @@ pub mod image;
 pub mod jobs;
 pub mod mesh;
 pub mod keys;
+pub mod missions;
 pub mod models;
 pub mod rag;
 pub mod realtime;
 pub mod scraper;
 pub mod search;
+pub mod security;
 pub mod session;
 pub mod video;
+pub mod vision;
 pub mod voices;
 
 // Re-export primary types at crate root for convenience.
@@ -201,6 +204,27 @@ pub use models::{ModelInfo, PricingInfo};
 pub use realtime::{
     realtime_connect_direct, realtime_connect_direct_to, RealtimeConfig, RealtimeEvent,
     RealtimeReceiver, RealtimeSender, RealtimeSession, RealtimeSessionResponse,
+};
+
+// Vision types
+pub use vision::{
+    DetectedObject, OcrResult, QualityAssessment, RelevanceCheck, TextOverlay, VisionContext,
+    VisionRequest, VisionResponse,
+};
+
+// Mission types
+pub use missions::{
+    MissionApproveRequest, MissionChatRequest, MissionChatResponse, MissionCheckpoint,
+    MissionCheckpointsResponse, MissionConfirmStructure, MissionCreateRequest,
+    MissionCreateResponse, MissionDetail, MissionImportRequest, MissionListResponse,
+    MissionPlanUpdate, MissionStatusResponse, MissionTask,
+};
+
+// Security types
+pub use security::{
+    SecurityAssessment, SecurityBlocklistEntry, SecurityBlocklistResponse, SecurityCheckResponse,
+    SecurityFinding, SecurityReportRequest, SecurityReportResponse, SecurityScanHtmlRequest,
+    SecurityScanResponse, SecurityScanUrlRequest,
 };
 
 // Error helpers
