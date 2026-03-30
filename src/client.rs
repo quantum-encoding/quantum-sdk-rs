@@ -216,6 +216,18 @@ impl Client {
         })))
     }
 
+    /// Sends a POST request and returns the raw JSON response.
+    /// Useful for fire-and-forget endpoints (logging, telemetry) where
+    /// the response type isn't worth defining a struct for.
+    pub async fn post_raw(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let (resp, _meta): (serde_json::Value, _) = self.post_json(path, body).await?;
+        Ok(resp)
+    }
+
     /// Sends a GET request and deserializes the response.
     pub async fn get_json<Resp: DeserializeOwned>(
         &self,
