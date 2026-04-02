@@ -413,28 +413,35 @@ where
     // Pin the byte stream so we can poll it inside unfold.
     let pinned_stream = Box::pin(byte_stream);
 
-    // We accumulate bytes into lines, then parse SSE "data: " lines.
+    // Accumulate raw bytes into lines to avoid splitting multi-byte UTF-8 characters.
+    // Only convert to String when we have a complete newline-terminated line.
     let line_stream = futures_util::stream::unfold(
-        (pinned_stream, String::new()),
+        (pinned_stream, Vec::<u8>::new()),
         |(mut stream, mut buffer)| async move {
             use futures_util::StreamExt;
             loop {
                 // Check if we have a complete line in the buffer.
-                if let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let mut line_bytes = buffer[..newline_pos].to_vec();
+                    buffer = buffer[newline_pos + 1..].to_vec();
+                    // Trim trailing \r
+                    if line_bytes.last() == Some(&b'\r') {
+                        line_bytes.pop();
+                    }
+                    let line = String::from_utf8_lossy(&line_bytes).into_owned();
                     return Some((line, (stream, buffer)));
                 }
 
                 // Read more data.
                 match stream.next().await {
                     Some(Ok(chunk)) => {
-                        buffer.push_str(&String::from_utf8_lossy(&chunk));
+                        buffer.extend_from_slice(&chunk);
                     }
                     Some(Err(_)) | None => {
                         // Stream ended. Emit remaining buffer if non-empty.
                         if !buffer.is_empty() {
-                            let remaining = std::mem::take(&mut buffer);
+                            let remaining = String::from_utf8_lossy(&buffer).into_owned();
+                            buffer.clear();
                             return Some((remaining, (stream, buffer)));
                         }
                         return None;
