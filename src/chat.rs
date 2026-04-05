@@ -41,6 +41,14 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ChatTool>>,
 
+    /// Constrains tool use: "auto" (default), "any" (force tool use), "none", or a specific tool name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>,
+
+    /// JSON Schema for structured output constraints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<serde_json::Value>,
+
     /// Enables server-sent event streaming. Set automatically by `chat_stream`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
@@ -184,6 +192,10 @@ pub struct ChatTool {
     /// JSON Schema for the function's arguments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<serde_json::Value>,
+
+    /// Enable guaranteed schema validation on tool inputs (Anthropic, OpenAI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
 }
 
 /// Response from a non-streaming chat request.
