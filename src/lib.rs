@@ -190,7 +190,8 @@ pub use scraper::{
 
 // Search types
 pub use search::{
-    ContextChunk, ContextOptions, Discussion, DiscussionResult, Infobox, InfoboxResult,
+    ContextChunk, ContextOptions, Discussion, DiscussionResult, GoogleSearchCitation,
+    GoogleSearchRequest, GoogleSearchResponse, GoogleSearchSupport, Infobox, InfoboxResult,
     LLMContextResponse, NewsResult, SearchAnswerCitation, SearchAnswerChoice,
     SearchAnswerMessage, SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk,
     SearchContextRequest, SearchContextResponse, SearchContextSource, SearchMessage,

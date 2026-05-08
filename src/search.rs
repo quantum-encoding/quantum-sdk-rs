@@ -424,6 +424,83 @@ pub struct SearchAnswerResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Google Grounded Search — Gemini Flash + google_search tool
+// ---------------------------------------------------------------------------
+
+/// Request body for Google grounded search via Gemini.
+///
+/// This is the *premium* search backend — quality is significantly higher
+/// than Brave for technical/news queries because it taps into Google's
+/// index, but billing is per-executed-query at $0.035 each. The model
+/// decides how many queries to run for a single user prompt; check
+/// `web_search_queries.len()` on the response to see the count.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct GoogleSearchRequest {
+    /// Search query string. Free-form natural language; the model will
+    /// translate this into one or more concrete Google searches.
+    pub query: String,
+}
+
+/// A web source returned by Google grounding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleSearchCitation {
+    /// Source URL (may be a Google redirect link the user can follow).
+    pub url: String,
+
+    /// Source title from the search result.
+    #[serde(default)]
+    pub title: String,
+}
+
+/// Links a span of the answer text to one or more citation indices,
+/// enabling inline-citation rendering on the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleSearchSupport {
+    /// Byte offset where this span starts in the answer text.
+    pub start_index: i32,
+
+    /// Byte offset where this span ends (exclusive).
+    pub end_index: i32,
+
+    /// The actual text span — included for resilience when the answer
+    /// has been streamed/transformed and indices no longer line up.
+    #[serde(default)]
+    pub text: String,
+
+    /// Indices into `citations` for the sources backing this span.
+    #[serde(default)]
+    pub grounding_chunk_indices: Vec<i32>,
+}
+
+/// Response from the Google grounded search endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GoogleSearchResponse {
+    /// The grounded answer text Gemini produced. May be empty if the
+    /// model decided no answer was warranted.
+    #[serde(default)]
+    pub answer: String,
+
+    /// Web sources Gemini grounded its answer on.
+    #[serde(default)]
+    pub citations: Vec<GoogleSearchCitation>,
+
+    /// **ToS-required** HTML/CSS widget showing search-suggestion chips.
+    /// Google's grounding terms require this to be rendered alongside
+    /// any grounded response. Pass it through verbatim — do not modify.
+    #[serde(default)]
+    pub search_entry_point: String,
+
+    /// The actual queries Gemini executed against Google Search.
+    /// Non-empty length is the BILLING UNIT on the backend.
+    #[serde(default)]
+    pub web_search_queries: Vec<String>,
+
+    /// Inline-citation spans linking text segments to citations.
+    #[serde(default)]
+    pub supports: Vec<GoogleSearchSupport>,
+}
+
+// ---------------------------------------------------------------------------
 // Client methods
 // ---------------------------------------------------------------------------
 
@@ -458,6 +535,28 @@ impl Client {
         let (resp, _meta) = self
             .post_json::<SearchAnswerRequest, SearchAnswerResponse>(
                 "/qai/v1/search/answer",
+                req,
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    /// Performs a Google grounded search via Gemini Flash + the
+    /// google_search built-in tool. Returns a grounded answer plus
+    /// citations, the ToS-required search-entry-point widget, and the
+    /// list of queries Gemini actually executed.
+    ///
+    /// Premium pricing — caller's wallet is debited per executed query
+    /// ($0.035 each). Use `search_answer` (Brave-backed) for cheap
+    /// high-volume search; reach for this when answer quality matters
+    /// more than per-call cost.
+    pub async fn google_search(
+        &self,
+        req: &GoogleSearchRequest,
+    ) -> Result<GoogleSearchResponse> {
+        let (resp, _meta) = self
+            .post_json::<GoogleSearchRequest, GoogleSearchResponse>(
+                "/qai/v1/search/google",
                 req,
             )
             .await?;
