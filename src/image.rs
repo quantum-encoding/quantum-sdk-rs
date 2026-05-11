@@ -91,6 +91,11 @@ pub struct ImageResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
+    /// Post-deduction credit balance in ticks (Receipt Pattern). Zero for
+    /// free/cached calls or responses that predate the field.
+    #[serde(default)]
+    pub balance_after: i64,
+
     /// Unique request identifier.
     #[serde(default)]
     pub request_id: String,
@@ -142,6 +147,9 @@ impl Client {
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
         }
+        if resp.balance_after == 0 {
+            resp.balance_after = meta.balance_after;
+        }
         if resp.request_id.is_empty() {
             resp.request_id = meta.request_id;
         }
@@ -155,6 +163,9 @@ impl Client {
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
+        }
+        if resp.balance_after == 0 {
+            resp.balance_after = meta.balance_after;
         }
         if resp.request_id.is_empty() {
             resp.request_id = meta.request_id;

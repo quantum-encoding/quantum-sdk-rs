@@ -22,6 +22,11 @@ pub struct MissionCreateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conductor_model: Option<String>,
 
+    /// Conductor tier override. Default: "expensive".
+    /// Set to "cheap" when using a fast router as conductor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conductor_tier: Option<String>,
+
     /// Worker team configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workers: Option<HashMap<String, MissionWorkerConfig>>,
@@ -52,6 +57,14 @@ pub struct MissionWorkerConfig {
     /// Worker description / capabilities.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+
+    /// Worker to escalate to on failure (e.g. cheap coder → expensive coder).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escalate_to: Option<String>,
+
+    /// Max retries before escalating (default 1 = escalate on first failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<i32>,
 }
 
 /// Request body for chatting with a mission's architect.

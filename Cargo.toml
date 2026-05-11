@@ -1,6 +1,6 @@
 [package]
 name = "quantum-sdk"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Rust client SDK for the Quantum AI API"
 license = "MIT"
@@ -19,6 +19,7 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 pin-project-lite = "0.2"
 bytes = "1"
 urlencoding = "2"
+uuid = { version = "1", features = ["v4"] }
 
 [[example]]
 name = "chat"

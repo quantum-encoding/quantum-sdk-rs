@@ -49,6 +49,10 @@ pub struct TextToSpeechResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
+    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    #[serde(default)]
+    pub balance_after: i64,
+
     /// Unique request identifier.
     #[serde(default)]
     pub request_id: String,
@@ -91,6 +95,10 @@ pub struct SpeechToTextResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
+    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    #[serde(default)]
+    pub balance_after: i64,
+
     /// Unique request identifier.
     #[serde(default)]
     pub request_id: String,
@@ -127,6 +135,10 @@ pub struct MusicResponse {
     /// Total cost in ticks.
     #[serde(default)]
     pub cost_ticks: i64,
+
+    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    #[serde(default)]
+    pub balance_after: i64,
 
     /// Unique request identifier.
     #[serde(default)]

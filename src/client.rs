@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
 
@@ -40,6 +41,9 @@ pub const TICKS_PER_USD: i64 = 10_000_000_000;
 pub struct ResponseMeta {
     /// Cost in ticks from X-QAI-Cost-Ticks header.
     pub cost_ticks: i64,
+    /// Post-deduction credit balance in ticks from X-QAI-Balance-After header.
+    /// Zero if the server didn't include the header (e.g. cached / free calls).
+    pub balance_after: i64,
     /// Request identifier from X-QAI-Request-Id header.
     pub request_id: String,
     /// Model identifier from X-QAI-Model header.
@@ -51,6 +55,24 @@ pub struct ClientBuilder {
     api_key: String,
     base_url: String,
     timeout: Duration,
+    app: Option<String>,
+    extra_headers: Vec<(String, String)>,
+}
+
+/// Header names that callers may not override via `extra_header` / `app`.
+/// Attempts to set these return an error at `build()` so auth can never be
+/// silently clobbered by a caller-supplied header.
+fn is_reserved_header(name: &str) -> bool {
+    name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("x-api-key")
+}
+
+fn invalid_header_error(message: String) -> Error {
+    Error::Api(ApiError {
+        status_code: 0,
+        code: "invalid_header".to_string(),
+        message,
+        request_id: String::new(),
+    })
 }
 
 impl ClientBuilder {
@@ -59,7 +81,9 @@ impl ClientBuilder {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_string(),
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_secs(120),
+            app: None,
+            extra_headers: Vec::new(),
         }
     }
 
@@ -69,9 +93,45 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the request timeout for non-streaming requests (default: 60s).
+    /// Sets the request timeout for non-streaming requests (default: 120s).
+    ///
+    /// Media generation endpoints (video, dubbing, 3D) can take 1–5 minutes.
+    /// For these, use `Duration::from_secs(300)` or longer. Alternatively,
+    /// use the async jobs API (`create_job` / `poll_job`) which doesn't block.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Tags every request with the calling app's identifier.
+    ///
+    /// Sent as `X-Quantum-App: <app>` on every HTTP request (including streaming).
+    /// The server uses this to route requests through app-specific paywall,
+    /// quota, or dispatch logic — for example, the Recipe Box trial-paywall
+    /// gate on `/qai/v1/chat`.
+    ///
+    /// Thin convenience wrapper around [`extra_header`](Self::extra_header).
+    /// If both `app(...)` and `extra_header("X-Quantum-App", ...)` are set,
+    /// the value from `app(...)` wins.
+    pub fn app(mut self, app: impl Into<String>) -> Self {
+        self.app = Some(app.into());
+        self
+    }
+
+    /// Adds an extra HTTP header to every request from this client.
+    ///
+    /// Useful for app identification, request tagging, A/B routing, etc.
+    /// Standard headers (`Authorization`, `X-API-Key`) are managed by the
+    /// builder and cannot be overridden — passing either here causes
+    /// [`build`](Self::build) to return an `invalid_header` error.
+    ///
+    /// Header names and values are validated at `build()` time, not here.
+    pub fn extra_header(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.extra_headers.push((name.into(), value.into()));
         self
     }
 
@@ -87,11 +147,41 @@ impl ClientBuilder {
             })
         })?;
 
+        // Resolve caller-supplied headers, with app() winning over any
+        // duplicate extra_header("X-Quantum-App", ...).
+        let mut caller_headers = self.extra_headers.clone();
+        if let Some(app) = self.app.as_ref() {
+            caller_headers.push(("X-Quantum-App".to_string(), app.clone()));
+        }
+
+        // Parse + validate caller headers up front so we can return a single
+        // typed error rather than failing partway through HeaderMap mutation.
+        let mut extra_headers_map = HeaderMap::new();
+        for (name, value) in &caller_headers {
+            if is_reserved_header(name) {
+                return Err(invalid_header_error(format!(
+                    "header '{name}' is reserved by the SDK and cannot be overridden via extra_header"
+                )));
+            }
+            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+                invalid_header_error(format!("invalid header name '{name}': {e}"))
+            })?;
+            let header_value = HeaderValue::from_str(value).map_err(|e| {
+                invalid_header_error(format!("invalid header value for '{name}': {e}"))
+            })?;
+            extra_headers_map.insert(header_name, header_value);
+        }
+
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header.clone());
         // Also send X-API-Key for proxies that claim the Authorization header (e.g. Cloudflare -> Cloud Run IAM).
         if let Ok(v) = HeaderValue::from_str(&self.api_key) {
             headers.insert("X-API-Key", v);
+        }
+        // Caller-supplied headers are inserted *after* auth so the reserved
+        // guard above is the only way to override standard SDK headers.
+        for (name, value) in &extra_headers_map {
+            headers.insert(name.clone(), value.clone());
         }
 
         let http = reqwest::Client::builder()
@@ -104,6 +194,7 @@ impl ClientBuilder {
                 base_url: self.base_url,
                 http,
                 auth_header,
+                extra_headers: extra_headers_map,
             }),
         })
     }
@@ -113,6 +204,12 @@ struct ClientInner {
     base_url: String,
     http: reqwest::Client,
     auth_header: HeaderValue,
+    /// Caller-supplied headers (via `ClientBuilder::extra_header` /
+    /// `ClientBuilder::app`). Already merged into the non-streaming
+    /// client's `default_headers`; the streaming paths build fresh
+    /// `reqwest::Client`s without defaults and must apply these
+    /// per-request.
+    extra_headers: HeaderMap,
 }
 
 /// The Quantum AI API client.
@@ -153,6 +250,10 @@ impl Client {
     }
 
     /// Sends a JSON POST request and deserializes the response.
+    ///
+    /// An `Idempotency-Key` header is automatically generated and reused across
+    /// retries, preventing duplicate charges when a 502/504 masks a successful
+    /// backend operation.
     pub async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -160,6 +261,8 @@ impl Client {
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
         let body_bytes = serde_json::to_vec(body)?;
+        // Same key for all retries — backend deduplicates on this.
+        let idempotency_key = Uuid::new_v4().to_string();
 
         let mut last_err = None;
         for attempt in 0..=MAX_RETRIES {
@@ -174,6 +277,7 @@ impl Client {
                 .http
                 .post(&url)
                 .header(CONTENT_TYPE, "application/json")
+                .header("Idempotency-Key", &idempotency_key)
                 .body(body_bytes.clone())
                 .send()
                 .await?;
@@ -305,6 +409,7 @@ impl Client {
         let url = format!("{}{}", self.inner.base_url, path);
         let resp = self.inner.http.post(&url)
             .header("content-type", "application/json")
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
             .body("{}")
             .send()
             .await?;
@@ -345,7 +450,11 @@ impl Client {
         form: reqwest::multipart::Form,
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-        let resp = self.inner.http.post(&url).multipart(form).send().await?;
+        let resp = self.inner.http.post(&url)
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .multipart(form)
+            .send()
+            .await?;
 
         let meta = parse_response_meta(&resp);
 
@@ -368,12 +477,14 @@ impl Client {
 
         let stream_client = reqwest::Client::builder().build()?;
 
-        let resp = stream_client
+        let mut req = stream_client
             .get(&url)
             .header(AUTHORIZATION, self.inner.auth_header.clone())
-            .header("Accept", "text/event-stream")
-            .send()
-            .await?;
+            .header("Accept", "text/event-stream");
+        for (name, value) in &self.inner.extra_headers {
+            req = req.header(name, value);
+        }
+        let resp = req.send().await?;
 
         let meta = parse_response_meta(&resp);
 
@@ -397,14 +508,16 @@ impl Client {
         // Build a client without timeout for streaming.
         let stream_client = reqwest::Client::builder().build()?;
 
-        let resp = stream_client
+        let mut req = stream_client
             .post(&url)
             .header(AUTHORIZATION, self.inner.auth_header.clone())
             .header(CONTENT_TYPE, "application/json")
             .header("Accept", "text/event-stream")
-            .json(body)
-            .send()
-            .await?;
+            .header("Idempotency-Key", Uuid::new_v4().to_string());
+        for (name, value) in &self.inner.extra_headers {
+            req = req.header(name, value);
+        }
+        let resp = req.json(body).send().await?;
 
         let meta = parse_response_meta(&resp);
 
@@ -434,9 +547,15 @@ fn parse_response_meta(resp: &reqwest::Response) -> ResponseMeta {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(0);
+    let balance_after = headers
+        .get("X-QAI-Balance-After")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
 
     ResponseMeta {
         cost_ticks,
+        balance_after,
         request_id,
         model,
     }
@@ -494,4 +613,44 @@ fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id
     };
 
     Error::Api(ApiError { status_code, code, message, request_id: request_id.to_string() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserved_headers_rejected_at_build() {
+        for name in ["Authorization", "authorization", "X-API-Key", "x-api-key"] {
+            let result = ClientBuilder::new("qai_test")
+                .extra_header(name, "anything")
+                .build();
+            match result {
+                Err(Error::Api(api)) => assert_eq!(api.code, "invalid_header"),
+                Ok(_) => panic!("expected reject for reserved header '{name}'"),
+                Err(other) => panic!("unexpected error variant for '{name}': {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_header_name_rejected_at_build() {
+        let result = ClientBuilder::new("qai_test")
+            .extra_header("bad name with spaces", "v")
+            .build();
+        match result {
+            Err(Error::Api(api)) => assert_eq!(api.code, "invalid_header"),
+            Ok(_) => panic!("expected reject for invalid header name"),
+            Err(other) => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn app_and_extra_header_build_succeeds() {
+        let _client = ClientBuilder::new("qai_test")
+            .app("recipe-box")
+            .extra_header("X-Correlation-Id", "abc-123")
+            .build()
+            .expect("valid builder should construct a Client");
+    }
 }

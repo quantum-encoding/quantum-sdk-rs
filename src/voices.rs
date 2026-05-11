@@ -229,20 +229,9 @@ pub struct AddVoiceFromLibraryResponse {
     pub voice_id: String,
 }
 
-/// Simple percent-encoding for query parameter values.
+/// Percent-encodes a query parameter value using the urlencoding crate.
 fn encode_query_value(s: &str) -> String {
-    let mut encoded = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(b as char);
-            }
-            _ => {
-                encoded.push_str(&format!("%{b:02X}"));
-            }
-        }
-    }
-    encoded
+    urlencoding::encode(s).into_owned()
 }
 
 impl Client {
