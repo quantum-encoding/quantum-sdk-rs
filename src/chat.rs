@@ -175,9 +175,17 @@ pub struct ContentBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
 
-    /// MIME type for file/image content blocks.
+    /// MIME type for file/image/file_uri content blocks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+
+    /// Remote-resource URL for `file_uri` content blocks. Gemini
+    /// accepts YouTube URLs verbatim here (with `mime_type: "video/mp4"`)
+    /// — no upload step needed for public videos. Other providers
+    /// may require a pre-uploaded resource URI; unsupported URIs are
+    /// silently skipped server-side rather than erroring the request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_uri: Option<String>,
 }
 
 /// Defines a function the model can call.
@@ -290,16 +298,34 @@ pub struct ChatUsage {
 }
 
 /// A single event from an SSE chat stream.
+///
+/// Tool-use streaming uses a triplet of events since v0.7:
+/// `tool_use_start` carries `tool_use_start`, `tool_use_input_delta`
+/// carries `tool_use_input_delta`, and `tool_use_complete` carries
+/// `tool_use_complete`. The legacy atomic `tool_use` event is still
+/// emitted by backends that haven't shipped the triplet yet — for new
+/// code, prefer the triplet fields.
 #[derive(Debug, Clone)]
 pub struct StreamEvent {
-    /// Event type: "content_delta", "thinking_delta", "tool_use", "usage", "heartbeat", "error", "done".
+    /// Event type: "content_delta", "thinking_delta",
+    /// "tool_use_start", "tool_use_input_delta", "tool_use_complete",
+    /// "tool_use" (legacy), "usage", "heartbeat", "error", "done".
     pub event_type: String,
 
     /// Incremental text for content_delta and thinking_delta events.
     pub delta: Option<StreamDelta>,
 
-    /// Populated for tool_use events.
+    /// Populated for legacy atomic tool_use events.
     pub tool_use: Option<StreamToolUse>,
+
+    /// Populated for tool_use_start events.
+    pub tool_use_start: Option<StreamToolUseStart>,
+
+    /// Populated for tool_use_input_delta events.
+    pub tool_use_input_delta: Option<StreamToolUseInputDelta>,
+
+    /// Populated for tool_use_complete events.
+    pub tool_use_complete: Option<StreamToolUseComplete>,
 
     /// Populated for usage events.
     pub usage: Option<ChatUsage>,
@@ -317,9 +343,35 @@ pub struct StreamDelta {
     pub text: String,
 }
 
-/// A tool call from a streaming event.
+/// A tool call from a legacy (atomic) streaming event.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StreamToolUse {
+    pub id: String,
+    pub name: String,
+    pub input: HashMap<String, serde_json::Value>,
+}
+
+/// Tool-call start event — fires once before any input deltas.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamToolUseStart {
+    pub id: String,
+    pub name: String,
+}
+
+/// Tool-call input delta — fires zero or more times with raw JSON fragments.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamToolUseInputDelta {
+    pub id: String,
+    /// Raw JSON fragment. May not parse on its own; accumulate until
+    /// the corresponding `tool_use_complete` event arrives with the
+    /// authoritative `input`.
+    pub partial_json: String,
+}
+
+/// Tool-call completion event — fires exactly once per call with the
+/// server-accumulated, fully-parsed arguments.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamToolUseComplete {
     pub id: String,
     pub name: String,
     pub input: HashMap<String, serde_json::Value>,
@@ -338,6 +390,9 @@ struct RawStreamEvent {
     name: Option<String>,
     #[serde(default)]
     input: Option<HashMap<String, serde_json::Value>>,
+    /// Carried by `tool_use_input_delta` events — a raw JSON fragment.
+    #[serde(default)]
+    partial_json: Option<String>,
     #[serde(default)]
     input_tokens: Option<i32>,
     #[serde(default)]
@@ -479,6 +534,9 @@ where
                     event_type: "done".to_string(),
                     delta: None,
                     tool_use: None,
+                    tool_use_start: None,
+                    tool_use_input_delta: None,
+                    tool_use_complete: None,
                     usage: None,
                     error: None,
                     done: true,
@@ -493,6 +551,9 @@ where
                         event_type: "error".to_string(),
                         delta: None,
                         tool_use: None,
+                        tool_use_start: None,
+                        tool_use_input_delta: None,
+                        tool_use_complete: None,
                         usage: None,
                         error: Some(format!("parse SSE: {e}")),
                         done: false,
@@ -505,6 +566,9 @@ where
                 event_type: raw.event_type.clone(),
                 delta: None,
                 tool_use: None,
+                tool_use_start: None,
+                tool_use_input_delta: None,
+                tool_use_complete: None,
                 usage: None,
                 error: None,
                 done: false,
@@ -515,7 +579,28 @@ where
                     ev.delta = raw.delta;
                 }
                 "tool_use" => {
+                    // Legacy atomic event — kept for back-compat with
+                    // backends that haven't shipped the triplet (v0.7+).
                     ev.tool_use = Some(StreamToolUse {
+                        id: raw.id.unwrap_or_default(),
+                        name: raw.name.unwrap_or_default(),
+                        input: raw.input.unwrap_or_default(),
+                    });
+                }
+                "tool_use_start" => {
+                    ev.tool_use_start = Some(StreamToolUseStart {
+                        id: raw.id.unwrap_or_default(),
+                        name: raw.name.unwrap_or_default(),
+                    });
+                }
+                "tool_use_input_delta" => {
+                    ev.tool_use_input_delta = Some(StreamToolUseInputDelta {
+                        id: raw.id.unwrap_or_default(),
+                        partial_json: raw.partial_json.unwrap_or_default(),
+                    });
+                }
+                "tool_use_complete" => {
+                    ev.tool_use_complete = Some(StreamToolUseComplete {
                         id: raw.id.unwrap_or_default(),
                         name: raw.name.unwrap_or_default(),
                         input: raw.input.unwrap_or_default(),

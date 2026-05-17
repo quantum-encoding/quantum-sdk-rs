@@ -57,7 +57,8 @@ pub use error::{ApiError, Error, Result};
 // Chat types
 pub use chat::{
     ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation, ContentBlock,
-    StreamDelta, StreamEvent, StreamToolUse,
+    StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete, StreamToolUseInputDelta,
+    StreamToolUseStart,
 };
 
 // Session types
