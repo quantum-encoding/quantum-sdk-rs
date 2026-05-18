@@ -137,3 +137,153 @@ pub(crate) struct ApiErrorInner {
     #[serde(rename = "type", default)]
     pub error_type: String,
 }
+
+/// Strongly-typed view of the API's stable error-code taxonomy
+/// (`internal/server/errors.go` on the backend). Use this instead
+/// of substring-matching `ApiError::message` — the message text is
+/// human-readable and may change between releases; the code is
+/// part of the wire contract and never gets repurposed.
+///
+/// `Unknown` covers two cases: (a) the backend emitted a code this
+/// SDK version doesn't recognise yet (forward-compat — a new code
+/// shipped after the SDK was built), and (b) the backend response
+/// had no code field at all (legacy / non-canonical error path).
+/// In both cases the raw string is preserved on `ApiError::code` so
+/// callers can match on it if they need to.
+///
+/// Variant naming mirrors the Go constants 1:1 so a `grep` for
+/// `KEY_FROZEN_BY_BUDGET` finds matches across both repos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ErrorCode {
+    // Auth / identity
+    AuthHeaderMissing,
+    AuthHeaderEmpty,
+    KeyBearerMalformed,
+    KeyNotFound,
+    KeyExpired,
+    KeyRevokedByAdmin,
+    KeyRevokedByOwner,
+    /// Partner GCP budget kill-switch fired — distinguishable from
+    /// a self-revoke or admin-revoke because the user's account is
+    /// fine, the partner's billing isn't. Remediation: contact the
+    /// partner to top up.
+    KeyFrozenByBudget,
+    KeyPartnerRejected,
+    SessionExpired,
+    EphemeralExpired,
+
+    // Authz / scope
+    ScopeEndpointDenied,
+    AdminRequired,
+    ServiceAccountRequired,
+
+    // Billing / credits
+    InsufficientBalance,
+    TrialExpired,
+    SubscriptionLapsed,
+    SpendCapExceeded,
+    /// Runtime variant of partner budget freeze — fired mid-request
+    /// vs. KeyFrozenByBudget which fires at auth time.
+    BudgetFrozen,
+    PaymentNotConfigured,
+    BillingPortalNoHistory,
+
+    // Rate / quota
+    RateLimitedPerKey,
+    RateLimitedPerIP,
+    QuotaExceeded,
+
+    // Provider / upstream
+    ProviderRateLimited,
+    ProviderUnavailable,
+    ProviderAuthFailed,
+    ProviderInvalidRequest,
+    /// Moderation block. Framed as content, NOT as account-state —
+    /// the user can retry with different content.
+    ContentRejected,
+    ModelNotAvailable,
+
+    // Request shape / validation
+    InvalidRequestBody,
+    MissingRequiredField,
+    FieldTooLong,
+    InvalidAttachment,
+    AttachmentTooLarge,
+    UnsupportedCapability,
+
+    // System
+    InternalError,
+    ServiceUnavailable,
+    StripeApiError,
+    IdempotencyConflict,
+
+    // Per-product paywall codes
+    RecipeBoxPaywall,
+
+    /// Unrecognised code — either a newer-than-SDK code or a non-
+    /// canonical response with no code field. The raw string is on
+    /// `ApiError::code`.
+    Unknown,
+}
+
+impl ErrorCode {
+    /// Parse the wire code string into a typed variant. Unknown
+    /// strings (including empty) yield `ErrorCode::Unknown`. Match
+    /// is case-sensitive — the backend guarantees uppercase
+    /// snake_case for canonical codes.
+    pub fn from_wire(code: &str) -> Self {
+        match code {
+            "AUTH_HEADER_MISSING" => Self::AuthHeaderMissing,
+            "AUTH_HEADER_EMPTY" => Self::AuthHeaderEmpty,
+            "KEY_BEARER_MALFORMED" => Self::KeyBearerMalformed,
+            "KEY_NOT_FOUND" => Self::KeyNotFound,
+            "KEY_EXPIRED" => Self::KeyExpired,
+            "KEY_REVOKED_BY_ADMIN" => Self::KeyRevokedByAdmin,
+            "KEY_REVOKED_BY_OWNER" => Self::KeyRevokedByOwner,
+            "KEY_FROZEN_BY_BUDGET" => Self::KeyFrozenByBudget,
+            "KEY_PARTNER_REJECTED" => Self::KeyPartnerRejected,
+            "SESSION_EXPIRED" => Self::SessionExpired,
+            "EPHEMERAL_EXPIRED" => Self::EphemeralExpired,
+            "SCOPE_ENDPOINT_DENIED" => Self::ScopeEndpointDenied,
+            "ADMIN_REQUIRED" => Self::AdminRequired,
+            "SERVICE_ACCOUNT_REQUIRED" => Self::ServiceAccountRequired,
+            "INSUFFICIENT_BALANCE" => Self::InsufficientBalance,
+            "TRIAL_EXPIRED" => Self::TrialExpired,
+            "SUBSCRIPTION_LAPSED" => Self::SubscriptionLapsed,
+            "SPEND_CAP_EXCEEDED" => Self::SpendCapExceeded,
+            "BUDGET_FROZEN" => Self::BudgetFrozen,
+            "PAYMENT_NOT_CONFIGURED" => Self::PaymentNotConfigured,
+            "BILLING_PORTAL_NO_HISTORY" => Self::BillingPortalNoHistory,
+            "RATE_LIMITED_PER_KEY" => Self::RateLimitedPerKey,
+            "RATE_LIMITED_PER_IP" => Self::RateLimitedPerIP,
+            "QUOTA_EXCEEDED" => Self::QuotaExceeded,
+            "PROVIDER_RATE_LIMITED" => Self::ProviderRateLimited,
+            "PROVIDER_UNAVAILABLE" => Self::ProviderUnavailable,
+            "PROVIDER_AUTH_FAILED" => Self::ProviderAuthFailed,
+            "PROVIDER_INVALID_REQUEST" => Self::ProviderInvalidRequest,
+            "CONTENT_REJECTED" => Self::ContentRejected,
+            "MODEL_NOT_AVAILABLE" => Self::ModelNotAvailable,
+            "INVALID_REQUEST_BODY" => Self::InvalidRequestBody,
+            "MISSING_REQUIRED_FIELD" => Self::MissingRequiredField,
+            "FIELD_TOO_LONG" => Self::FieldTooLong,
+            "INVALID_ATTACHMENT" => Self::InvalidAttachment,
+            "ATTACHMENT_TOO_LARGE" => Self::AttachmentTooLarge,
+            "UNSUPPORTED_CAPABILITY" => Self::UnsupportedCapability,
+            "INTERNAL_ERROR" => Self::InternalError,
+            "SERVICE_UNAVAILABLE" => Self::ServiceUnavailable,
+            "STRIPE_API_ERROR" => Self::StripeApiError,
+            "IDEMPOTENCY_CONFLICT" => Self::IdempotencyConflict,
+            "RECIPE_BOX_PAYWALL" => Self::RecipeBoxPaywall,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl ApiError {
+    /// Returns the strongly-typed error code. Convenience wrapper
+    /// over `ErrorCode::from_wire(&self.code)`.
+    pub fn typed_code(&self) -> ErrorCode {
+        ErrorCode::from_wire(&self.code)
+    }
+}

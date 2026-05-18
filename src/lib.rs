@@ -52,13 +52,13 @@ pub mod voices;
 
 // Re-export primary types at crate root for convenience.
 pub use client::{Client, ClientBuilder, ResponseMeta, DEFAULT_BASE_URL, TICKS_PER_USD};
-pub use error::{ApiError, Error, Result};
+pub use error::{ApiError, Error, ErrorCode, Result};
 
 // Chat types
 pub use chat::{
     ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation, ContentBlock,
-    StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete, StreamToolUseInputDelta,
-    StreamToolUseStart,
+    EstimateResponse, StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete,
+    StreamToolUseInputDelta, StreamToolUseStart,
 };
 
 // Session types

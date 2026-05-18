@@ -295,6 +295,53 @@ pub struct ChatUsage {
     pub input_tokens: i32,
     pub output_tokens: i32,
     pub cost_ticks: i64,
+
+    /// Input tokens served from the provider's prompt cache, billed
+    /// at the (lower) cached rate. Omitted on responses with no
+    /// cache hit. Backend wire shape: `cached_tokens` (i32);
+    /// promoted to Option<i64> here for headroom on future
+    /// long-cache scenarios (multi-hour video transcripts, etc.).
+    /// Multi-turn billing audits reconcile by computing
+    /// (non-cached) input_tokens vs (cached) cached_tokens — both
+    /// roll into the provider's billable total.
+    #[serde(default)]
+    pub cached_tokens: Option<i64>,
+
+    /// Sub-component of `output_tokens` that was model reasoning /
+    /// thinking output (Gemini 3.x's `thoughtTokens`, OpenAI o-
+    /// series' reasoning tokens, Anthropic's extended-thinking
+    /// blocks). Omitted on responses from non-reasoning models.
+    /// Total billable output = `output_tokens` (which already
+    /// includes the reasoning component — this field is just
+    /// transparency on how much of that was thinking).
+    #[serde(default)]
+    pub reasoning_tokens: Option<i64>,
+}
+
+/// Response shape from `POST /qai/v1/chat/estimate`. Returned by
+/// `Client::estimate_chat`.
+///
+/// `estimated_cost_ticks` is the upfront reservation the actual
+/// `chat` call would book — it's a worst-case ceiling, not a
+/// prediction of the final settle. For text-only payloads, expected
+/// settle is close to this number; for video / multimodal inputs
+/// the ceiling can over-estimate (Gemini's reasoning budget +
+/// `max_tokens` cap drive the output side) and the post-call
+/// settle refunds the difference. Either way, this is the number
+/// the user must have available to send the request.
+///
+/// `estimated_cost_usd` is the same value pre-divided by
+/// `TicksPerUSD` for convenience — no need to know the per-tick
+/// rate on the client.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EstimateResponse {
+    pub estimated_cost_ticks: i64,
+    pub estimated_cost_usd: f64,
+    /// Echo of the model name the estimate was computed against —
+    /// handy when the caller wants to display "≈ X credits on
+    /// gemini-flash-latest" without re-reading the request.
+    #[serde(default)]
+    pub model: String,
 }
 
 /// A single event from an SSE chat stream.
@@ -431,6 +478,45 @@ impl Client {
         if resp.model.is_empty() {
             resp.model = meta.model;
         }
+        Ok(resp)
+    }
+
+    /// Estimates the upfront credit reservation a `chat` call with
+    /// the same `ChatRequest` would book — WITHOUT making the
+    /// provider call or deducting credits. Use this to render a
+    /// "this will cost ≈ X credits" hint in the UI before the user
+    /// commits to a payload (notably long YouTube videos attached
+    /// via `ContentBlock.file_uri`, which bill at ~263 tokens per
+    /// second and can dwarf a text-only chat by 1000×).
+    ///
+    /// Wraps `POST /qai/v1/chat/estimate`. Same auth as `chat()`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> quantum_sdk::Result<()> {
+    /// let client = quantum_sdk::Client::new("qai_...");
+    /// let req = quantum_sdk::ChatRequest {
+    ///     model: "gemini-flash-latest".into(),
+    ///     messages: vec![quantum_sdk::ChatMessage::user("hi")],
+    ///     ..Default::default()
+    /// };
+    /// let est = client.estimate_chat(&req).await?;
+    /// println!("would cost ~{} ticks (~${})", est.estimated_cost_ticks, est.estimated_cost_usd);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn estimate_chat(&self, req: &ChatRequest) -> Result<EstimateResponse> {
+        // Drop `stream` from the estimate payload — the backend
+        // doesn't care about streaming for cost purposes (output
+        // ceiling is the same either way) and including it would
+        // make the SDK shape diverge needlessly from the JSON the
+        // server sees on the wire.
+        let mut req = req.clone();
+        req.stream = None;
+        let (resp, _meta) = self
+            .post_json::<ChatRequest, EstimateResponse>("/qai/v1/chat/estimate", &req)
+            .await?;
         Ok(resp)
     }
 
@@ -611,6 +697,12 @@ where
                         input_tokens: raw.input_tokens.unwrap_or(0),
                         output_tokens: raw.output_tokens.unwrap_or(0),
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
+                        // Stream "usage" events carry only the
+                        // running totals — cached/reasoning splits
+                        // arrive on the final non-stream envelope.
+                        // None here is faithful, not a bug.
+                        cached_tokens: None,
+                        reasoning_tokens: None,
                     });
                 }
                 "error" => {
