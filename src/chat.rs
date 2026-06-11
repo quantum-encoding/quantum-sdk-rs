@@ -61,6 +61,19 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<i32>,
 
+    /// How much chain-of-thought a reasoning model runs before answering.
+    /// One of "none", "low", "medium", "high", "xhigh"; `None` = provider
+    /// default (medium on GPT-5.5+). An unknown value is rejected with 400.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+
+    /// Vertex resource name of a previously created context cache (e.g.
+    /// "cachedContents/abc123"). When set, the cached content is billed at
+    /// the cached-read rate and need not be re-sent. Gemini-only; the
+    /// cache's model must match this request's model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_content: Option<String>,
+
     /// Provider-specific settings (e.g. Anthropic thinking, xAI search).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<HashMap<String, serde_json::Value>>,
@@ -88,6 +101,12 @@ pub struct ChatMessage {
     /// Whether a tool result is an error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
+
+    /// Provider-side reasoning state (OpenAI Responses API). Pass back the
+    /// `phase` received on the previous turn's [`ChatResponse`] so reasoning
+    /// state is preserved across replay. `None` for providers without phase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
 }
 
 impl ChatMessage {
@@ -237,6 +256,13 @@ pub struct ChatResponse {
     /// Citations from web search (when search is enabled via provider_options).
     #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub citations: Vec<Citation>,
+
+    /// Provider-side reasoning-state tag (OpenAI Responses API). Echo it back
+    /// on the corresponding assistant [`ChatMessage::phase`] of the next turn
+    /// to preserve reasoning state across replay. Empty when the provider
+    /// doesn't surface phase.
+    #[serde(default)]
+    pub phase: String,
 
     /// Total cost from the X-QAI-Cost-Ticks header.
     #[serde(skip)]

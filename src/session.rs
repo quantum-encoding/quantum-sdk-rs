@@ -116,6 +116,12 @@ pub struct SessionChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_config: Option<ContextConfig>,
 
+    /// How much chain-of-thought a reasoning model runs before answering.
+    /// One of "none", "low", "medium", "high", "xhigh"; `None` = provider
+    /// default. Mirrors [`ChatRequest::reasoning_effort`](crate::ChatRequest).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+
     /// Provider-specific settings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<HashMap<String, serde_json::Value>>,
