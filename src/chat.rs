@@ -222,7 +222,15 @@ pub struct ChatResponse {
     /// Token counts and cost.
     pub usage: Option<ChatUsage>,
 
-    /// Why generation stopped ("end_turn", "tool_use", "max_tokens").
+    /// Why generation stopped. As of the gateway's provider-normalization
+    /// change, this is a canonical value drawn from the [`stop_reason`]
+    /// module — the same space regardless of which provider served the
+    /// request: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`,
+    /// `content_filter`, `refusal`, or `error`. A provider-specific reason
+    /// with no canonical mapping passes through lowercased, so match the
+    /// known constants and treat anything else as terminal. Kept as a
+    /// `String` (not an enum) precisely so an unrecognized value never
+    /// fails to deserialize.
     #[serde(default)]
     pub stop_reason: String,
 
@@ -267,6 +275,53 @@ impl ChatResponse {
             .filter(|b| b.block_type == "tool_use")
             .collect()
     }
+
+    /// True when the model is requesting tool execution
+    /// (`stop_reason == "tool_use"`). The gateway guarantees this whenever
+    /// tool_use blocks are present, across every provider.
+    pub fn is_tool_use(&self) -> bool {
+        self.stop_reason == stop_reason::TOOL_USE
+    }
+
+    /// True when a safety classifier declined the request
+    /// (`stop_reason == "refusal"`). On a refusal the content may be empty
+    /// or a partial, already-streamed prefix that should be discarded —
+    /// check this before reading [`text`](Self::text). (Newer Anthropic
+    /// models such as Claude Fable 5 can refuse with an HTTP 200.)
+    pub fn is_refusal(&self) -> bool {
+        self.stop_reason == stop_reason::REFUSAL
+    }
+
+    /// True when output was cut off by the token cap
+    /// (`stop_reason == "max_tokens"`) — the response is incomplete; raise
+    /// `max_tokens` or continue the turn.
+    pub fn is_max_tokens(&self) -> bool {
+        self.stop_reason == stop_reason::MAX_TOKENS
+    }
+}
+
+/// Canonical `stop_reason` values emitted by the gateway.
+///
+/// Every provider's native finish reason is normalized into this
+/// Anthropic-flavored space before it reaches you, so matching these
+/// constants works regardless of which model served the request. The
+/// gateway may still pass through a provider-specific reason it cannot map
+/// (lowercased); treat any value outside this set as terminal.
+pub mod stop_reason {
+    /// Natural completion.
+    pub const END_TURN: &str = "end_turn";
+    /// Model is requesting tool execution (tool_use blocks present).
+    pub const TOOL_USE: &str = "tool_use";
+    /// Output token cap reached — the response is truncated.
+    pub const MAX_TOKENS: &str = "max_tokens";
+    /// A requested stop sequence matched.
+    pub const STOP_SEQUENCE: &str = "stop_sequence";
+    /// Provider-side safety/policy stop.
+    pub const CONTENT_FILTER: &str = "content_filter";
+    /// A safety classifier declined the request; discard any partial output.
+    pub const REFUSAL: &str = "refusal";
+    /// Provider reported a terminal failure.
+    pub const ERROR: &str = "error";
 }
 
 /// A source reference from web search grounding.

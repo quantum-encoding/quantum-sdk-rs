@@ -19,7 +19,7 @@ async fn main() {
 
     let resp = client
         .chat(&ChatRequest {
-            model: "claude-sonnet-4-6".into(),
+            model: "claude-opus-4-8".into(),
             messages: vec![ChatMessage::user(
                 "What is quantum computing in one sentence?",
             )],
@@ -29,6 +29,12 @@ async fn main() {
         .expect("Chat failed");
 
     println!("Model: {}", resp.model);
+    // stop_reason is canonical across every provider — match it directly.
+    if resp.is_refusal() {
+        println!("Request was declined (stop_reason = refusal); no answer to show.");
+        return;
+    }
+    println!("Stop reason: {}", resp.stop_reason);
     println!("Response: {}", resp.text());
     if let Some(usage) = &resp.usage {
         println!(
@@ -43,7 +49,7 @@ async fn main() {
 
     let mut stream = client
         .chat_stream(&ChatRequest {
-            model: "claude-sonnet-4-6".into(),
+            model: "claude-opus-4-8".into(),
             messages: vec![ChatMessage::user(
                 "Count from 1 to 5, one number per line.",
             )],

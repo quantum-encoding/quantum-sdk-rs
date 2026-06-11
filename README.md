@@ -41,7 +41,7 @@ use quantum_sdk::{Client, ChatRequest, ChatMessage};
 let client = Client::new("qai_k_your_key_here");
 
 let response = client.chat_request(ChatRequest {
-    model: "claude-sonnet-4-6".into(),
+    model: "claude-opus-4-8".into(),
     messages: vec![
         ChatMessage::system("You are a helpful assistant."),
         ChatMessage::user("Explain ownership in Rust"),
@@ -63,7 +63,7 @@ use futures::StreamExt;
 let client = Client::new("qai_k_your_key_here");
 
 let mut stream = client.chat_stream(ChatRequest {
-    model: "claude-sonnet-4-6".into(),
+    model: "claude-opus-4-8".into(),
     messages: vec![ChatMessage::user("Write a haiku about Rust")],
     ..Default::default()
 }).await?;

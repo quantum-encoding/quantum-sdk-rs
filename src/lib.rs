@@ -60,6 +60,8 @@ pub use chat::{
     EstimateResponse, StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete,
     StreamToolUseInputDelta, StreamToolUseStart,
 };
+// Canonical stop_reason constants (`stop_reason::END_TURN`, etc.).
+pub use chat::stop_reason;
 
 // Session types
 pub use session::{
