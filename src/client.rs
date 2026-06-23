@@ -81,7 +81,11 @@ impl ClientBuilder {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_string(),
-            timeout: Duration::from_secs(120),
+            // 120s could abort long buffered media generation (image/video return
+            // a single JSON blob only when the provider finishes). 600s clears the
+            // backend's 5-minute media deadline so the server errors first.
+            // Streaming uses a separate no-timeout client.
+            timeout: Duration::from_secs(600),
             app: None,
             extra_headers: Vec::new(),
         }
