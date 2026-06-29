@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
 
 /// Describes an available model.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModelInfo {
     /// Model identifier used in API requests.
     pub id: String,
@@ -34,6 +34,33 @@ pub struct ModelInfo {
     /// Price unit description (e.g. "per image", "per second").
     #[serde(default)]
     pub price_unit: Option<String>,
+
+    /// Context window (e.g. "200K", "2M"); display-only.
+    #[serde(default)]
+    pub context_window: Option<String>,
+
+    /// Routing hint ("direct", "vertex-maas", …).
+    #[serde(default)]
+    pub route: Option<String>,
+
+    /// Reachable via GCP/Vertex credentials.
+    #[serde(default)]
+    pub vertex_available: bool,
+
+    /// Rolling aliases that resolve to this model (e.g. "claude-opus-latest").
+    /// Prefer sending the alias so backend model swaps don't break pinned picks.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+
+    /// True when this model is the current target of a rolling alias — the
+    /// recommended "latest" default for its family/category.
+    #[serde(default)]
+    pub is_default: bool,
+
+    /// Semantic per-model parameter schema (temperature/effort/size/…), as raw
+    /// JSON so clients can render controls without the SDK modelling every kind.
+    #[serde(default)]
+    pub parameters: Option<serde_json::Value>,
 }
 
 /// Pricing details for a model.
