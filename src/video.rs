@@ -21,6 +21,13 @@ pub struct VideoRequest {
     /// Video aspect ratio (e.g. "16:9", "9:16").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
+
+    /// Catalog-schema-driven extra parameters (resolution, sample_count,
+    /// negative_prompt, person_generation, generate_audio, …). Flattened to
+    /// top-level JSON so any param the backend's /qai/v1/videos accepts is
+    /// forwarded without a typed field. Empty map serializes to nothing.
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Response from video generation.
