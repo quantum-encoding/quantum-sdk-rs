@@ -74,6 +74,13 @@ pub struct ImageRequest {
     /// Generate PBR texture maps (base_color, metallic, roughness, normal).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_pbr: Option<bool>,
+
+    /// Catalog-schema-driven extra parameters (e.g. resolution, output_compression,
+    /// number_of_images, negative_prompt). Flattened to top-level JSON so any param
+    /// the backend's /qai/v1/images accepts is forwarded without a typed field.
+    /// An empty map serializes to nothing.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Response from image generation.
