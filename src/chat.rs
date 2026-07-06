@@ -62,8 +62,9 @@ pub struct ChatRequest {
     pub max_tokens: Option<i32>,
 
     /// How much chain-of-thought a reasoning model runs before answering.
-    /// One of "none", "low", "medium", "high", "xhigh"; `None` = provider
-    /// default (medium on GPT-5.5+). An unknown value is rejected with 400.
+    /// One of "none", "low", "medium", "high", "xhigh", "max"; `None` =
+    /// provider default (medium on GPT-5.5+). `max` is Anthropic Opus 4.7+
+    /// only (OpenAI will 400 on it). An unknown value is rejected with 400.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
 
@@ -263,6 +264,14 @@ pub struct ChatResponse {
     /// doesn't surface phase.
     #[serde(default)]
     pub phase: String,
+
+    /// `Some(true)` when this response was served from the semantic cache
+    /// (the same signal the `X-Semantic-Cache` header carries at the
+    /// transport layer). `None`/`Some(false)` on a fresh provider response.
+    /// Cached responses are free of provider cost but still metered for
+    /// the gateway's cache-storage overhead.
+    #[serde(default)]
+    pub cached: Option<bool>,
 
     /// Total cost from the X-QAI-Cost-Ticks header.
     #[serde(skip)]
@@ -525,6 +534,11 @@ struct RawStreamEvent {
     input_tokens: Option<i32>,
     #[serde(default)]
     output_tokens: Option<i32>,
+    /// Sub-component of `output_tokens` that was reasoning / thinking.
+    /// The backend's streaming `usage` event carries this (see
+    /// `sse.go` `SSEWriter::Usage`); absent on non-reasoning models.
+    #[serde(default)]
+    reasoning_tokens: Option<i64>,
     #[serde(default)]
     cost_ticks: Option<i64>,
     #[serde(default)]
@@ -778,12 +792,13 @@ where
                         input_tokens: raw.input_tokens.unwrap_or(0),
                         output_tokens: raw.output_tokens.unwrap_or(0),
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
-                        // Stream "usage" events carry only the
-                        // running totals — cached/reasoning splits
-                        // arrive on the final non-stream envelope.
-                        // None here is faithful, not a bug.
+                        // The backend's streaming usage event surfaces
+                        // reasoning_tokens (sse.go SSEWriter::Usage) but
+                        // not cached_tokens — that split only arrives on
+                        // the final non-stream envelope. None for
+                        // cached_tokens here is faithful, not a bug.
                         cached_tokens: None,
-                        reasoning_tokens: None,
+                        reasoning_tokens: raw.reasoning_tokens,
                     });
                 }
                 "error" => {

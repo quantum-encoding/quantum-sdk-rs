@@ -263,10 +263,35 @@ impl Client {
         path: &str,
         body: &Req,
     ) -> Result<(Resp, ResponseMeta)> {
+        self.post_json_with_idempotency(path, body, None).await
+    }
+
+    /// Like [`post_json`](Self::post_json) but with a caller-supplied
+    /// idempotency key.
+    ///
+    /// When `idempotency_key` is `Some`, that value is sent as the
+    /// `Idempotency-Key` header on every retry attempt (the backend
+    /// deduplicates on it). When `None`, a random UUID is generated
+    /// per call — matching the default [`post_json`](Self::post_json)
+    /// behavior.
+    ///
+    /// Pass a deterministic key for fan-out / queue / retry scenarios
+    /// where the same logical request may be issued by multiple workers
+    /// (or re-issued after a crash) and must not create duplicate
+    /// charges. The key is reused across retries so a transient 502/504
+    /// masking a successful backend operation won't double-charge.
+    pub async fn post_json_with_idempotency<Req: Serialize, Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Req,
+        idempotency_key: Option<String>,
+    ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
         let body_bytes = serde_json::to_vec(body)?;
-        // Same key for all retries — backend deduplicates on this.
-        let idempotency_key = Uuid::new_v4().to_string();
+        // Caller key wins; otherwise generate one. Either way the same
+        // key is reused across retries so the backend deduplicates.
+        let idempotency_key =
+            idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
 
         let mut last_err = None;
         for attempt in 0..=MAX_RETRIES {
@@ -410,10 +435,23 @@ impl Client {
         &self,
         path: &str,
     ) -> Result<(Resp, ResponseMeta)> {
+        self.post_json_empty_with_idempotency(path, None).await
+    }
+
+    /// Like [`post_json_empty`](Self::post_json_empty) but with a
+    /// caller-supplied idempotency key. See
+    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
+    /// for the rationale.
+    pub async fn post_json_empty_with_idempotency<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        idempotency_key: Option<String>,
+    ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
+        let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
         let resp = self.inner.http.post(&url)
             .header("content-type", "application/json")
-            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .header("Idempotency-Key", key)
             .body("{}")
             .send()
             .await?;
@@ -453,9 +491,23 @@ impl Client {
         path: &str,
         form: reqwest::multipart::Form,
     ) -> Result<(Resp, ResponseMeta)> {
+        self.post_multipart_with_idempotency(path, form, None).await
+    }
+
+    /// Like [`post_multipart`](Self::post_multipart) but with a
+    /// caller-supplied idempotency key. See
+    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
+    /// for the rationale.
+    pub async fn post_multipart_with_idempotency<Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        form: reqwest::multipart::Form,
+        idempotency_key: Option<String>,
+    ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
+        let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
         let resp = self.inner.http.post(&url)
-            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .header("Idempotency-Key", key)
             .multipart(form)
             .send()
             .await?;
@@ -507,17 +559,33 @@ impl Client {
         path: &str,
         body: &impl Serialize,
     ) -> Result<(reqwest::Response, ResponseMeta)> {
+        self.post_stream_raw_with_idempotency(path, body, None).await
+    }
+
+    /// Like [`post_stream_raw`](Self::post_stream_raw) but with a
+    /// caller-supplied idempotency key. See
+    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
+    /// for the rationale. Streaming requests are single-attempt (no
+    /// retry), but the key still lets the backend deduplicate a
+    /// re-issued stream request after a client crash or reconnect.
+    pub async fn post_stream_raw_with_idempotency(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+        idempotency_key: Option<String>,
+    ) -> Result<(reqwest::Response, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
 
         // Build a client without timeout for streaming.
         let stream_client = reqwest::Client::builder().build()?;
 
+        let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
         let mut req = stream_client
             .post(&url)
             .header(AUTHORIZATION, self.inner.auth_header.clone())
             .header(CONTENT_TYPE, "application/json")
             .header("Accept", "text/event-stream")
-            .header("Idempotency-Key", Uuid::new_v4().to_string());
+            .header("Idempotency-Key", key);
         for (name, value) in &self.inner.extra_headers {
             req = req.header(name, value);
         }
