@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 // ---------------------------------------------------------------------------
 // Scan requests
@@ -75,7 +76,7 @@ pub struct SecurityAssessment {
     pub threat_score: f64,
 
     /// Individual findings.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub findings: Vec<SecurityFinding>,
 
     /// Length of hidden text content detected.
@@ -177,7 +178,7 @@ pub struct SecurityCheckResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SecurityBlocklistResponse {
     /// Blocklist entries.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub entries: Vec<SecurityBlocklistEntry>,
 
     /// Total count.
@@ -213,7 +214,7 @@ pub struct SecurityBlocklistEntry {
     pub threat_score: f64,
 
     /// Detection categories.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub categories: Vec<String>,
 
     /// Number of findings.

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 /// Describes an available model.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,7 +50,7 @@ pub struct ModelInfo {
 
     /// Rolling aliases that resolve to this model (e.g. "claude-opus-latest").
     /// Prefer sending the alias so backend model swaps don't break pinned picks.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub aliases: Vec<String>,
 
     /// True when this model is the current target of a rolling alias — the

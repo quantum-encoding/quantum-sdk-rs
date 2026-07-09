@@ -1,16 +1,9 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
 
-/// Deserialize null as Default::default() (e.g. null → empty Vec).
-fn deserialize_null_as_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
-}
+use crate::serde_util::null_as_default as deserialize_null_as_default;
 
 /// Request body for image generation.
 #[derive(Debug, Clone, Serialize, Default)]

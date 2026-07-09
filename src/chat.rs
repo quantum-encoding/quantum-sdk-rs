@@ -9,14 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::error::Result;
 
-/// Deserialize null as empty Vec (Gemini sometimes returns null for array fields).
-fn null_as_empty_vec<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::<Vec<T>>::deserialize(deserializer).map(|v| v.unwrap_or_default())
-}
+use crate::serde_util::null_as_default as null_as_empty_vec;
 
 /// Deserialize null as None for Option<Vec<T>> fields.
 fn deserialize_opt_vec<'de, D, T>(deserializer: D) -> std::result::Result<Option<Vec<T>>, D::Error>

@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 /// A single job in a batch submission.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -106,7 +107,7 @@ pub struct BatchJobInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchJobsResponse {
     /// The list of batch jobs.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub jobs: Vec<BatchJobInfo>,
 }
 

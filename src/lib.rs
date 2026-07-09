@@ -45,6 +45,7 @@ pub mod realtime;
 pub mod scraper;
 pub mod search;
 pub mod security;
+mod serde_util;
 pub mod session;
 pub mod video;
 pub mod vision;

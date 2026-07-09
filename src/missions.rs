@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 // ---------------------------------------------------------------------------
 // Request types
@@ -259,7 +260,7 @@ pub struct MissionDetail {
     pub result: Option<String>,
 
     /// Tasks within the mission.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub tasks: Vec<MissionTask>,
 
     /// Whether the mission was approved.
@@ -323,7 +324,7 @@ pub struct MissionTask {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MissionListResponse {
     /// List of missions.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub missions: Vec<MissionDetail>,
 }
 
@@ -385,7 +386,7 @@ pub struct MissionCheckpoint {
 pub struct MissionCheckpointsResponse {
     #[serde(default)]
     pub mission_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub checkpoints: Vec<MissionCheckpoint>,
 }
 

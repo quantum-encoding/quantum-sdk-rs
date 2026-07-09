@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 /// Request body for video generation.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -277,7 +278,7 @@ pub struct VideoTemplatesResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeyGenAvatarsResponse {
     /// Available avatars (raw JSON items).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub avatars: Vec<serde_json::Value>,
 
     /// Unique request identifier.
