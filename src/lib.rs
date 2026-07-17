@@ -25,6 +25,7 @@ pub mod account;
 pub mod agent;
 pub mod audio;
 pub mod auth;
+pub mod avatar;
 pub mod batch;
 pub mod chat;
 pub mod client;
@@ -85,13 +86,26 @@ pub use image::{
 pub use video::{
     Avatar, AvatarsResponse, DigitalTwinRequest, GeneratedVideo, HeyGenAvatarsResponse,
     HeyGenTemplatesResponse, HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest,
-    StudioClip, StudioVideoRequest, TranslateRequest, VideoRequest, VideoResponse,
-    VideoStudioRequest, VideoTemplate, VideoTemplatesResponse, VideoTranslateRequest,
+    StudioClip, StudioVideoRequest, TranslateRequest, VideoBatchItem, VideoBatchItemError,
+    VideoBatchStatusQuery, VideoBatchStatusResponse, VideoBatchSubmitRequest,
+    VideoBatchSubmitResponse, VideoRequest, VideoResponse, VideoStudioRequest,
+    VideoSubtitlePosition, VideoTemplate, VideoTemplateDetail, VideoTemplateDetailResponse,
+    VideoTemplateDimension, VideoTemplateGenerateRequest, VideoTemplateScene,
+    VideoTemplateSceneVariable, VideoTemplateSubtitles, VideoTemplatesResponse,
+    VideoTranslateRequest,
+};
+
+// Avatar realtime (HeyGen live broadcast) types
+pub use avatar::{
+    AvatarAudioInput, AvatarRealtimeCancelResponse, AvatarRealtimeCreateResponse,
+    AvatarRealtimeRequest, AvatarRealtimeStatusResponse, AvatarRealtimeTextRequest,
+    AvatarRealtimeTextResponse,
 };
 
 // Audio types
 pub use audio::{
-    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse, DialogueRequest,
+    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse,
+    AudioSound, AudioSoundsQuery, AudioSoundsResponse, DialogueRequest,
     DialogueResponse, DialogueTurn, DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest,
     ElevenMusicResponse, FinetuneInfo,
     IsolateVoiceRequest, IsolateRequest,

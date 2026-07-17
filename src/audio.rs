@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::serde_util::null_as_default;
 
 /// Request body for text-to-speech.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -798,7 +799,110 @@ pub struct ListFinetunesResponse {
 // Client impl
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// HeyGen sounds search (background music + sound effects)
+// ---------------------------------------------------------------------------
+
+/// Query parameters for searching the sounds catalog.
+#[derive(Debug, Clone, Default)]
+pub struct AudioSoundsQuery {
+    /// Natural-language description of the sound wanted (required).
+    pub query: String,
+
+    /// Catalog to search: "music" | "sound_effects" (API default: "music").
+    /// Wire param: `type`.
+    pub sound_type: Option<String>,
+
+    /// Max results, 1–50 (API default 10).
+    pub limit: Option<i32>,
+
+    /// Minimum similarity score, 0–1 (API default 0.7).
+    pub min_score: Option<f64>,
+
+    /// Opaque cursor from a previous response's `next_token`.
+    pub token: Option<String>,
+}
+
+/// A track from the sounds catalog.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AudioSound {
+    /// Track identifier.
+    pub id: String,
+
+    /// Track name.
+    #[serde(default)]
+    pub name: String,
+
+    /// Track description.
+    #[serde(default)]
+    pub description: String,
+
+    /// Pre-signed WAV URL with a limited lifetime — download promptly,
+    /// do not cache.
+    #[serde(default)]
+    pub audio_url: String,
+
+    /// Duration in seconds.
+    #[serde(default)]
+    pub duration: f64,
+
+    /// Similarity score 0–1 (best first).
+    #[serde(default)]
+    pub score: f64,
+
+    /// "music" | "sound_effects". Wire field: `type`.
+    #[serde(rename = "type", default)]
+    pub sound_type: String,
+}
+
+/// Response from searching the sounds catalog (unbilled).
+#[derive(Debug, Clone, Deserialize)]
+pub struct AudioSoundsResponse {
+    /// Matching tracks, best score first (empty page → `[]`).
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub sounds: Vec<AudioSound>,
+
+    /// More pages exist.
+    #[serde(default)]
+    pub has_more: bool,
+
+    /// Pass as `token` for the next page (may be empty).
+    #[serde(default)]
+    pub next_token: String,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
 impl Client {
+    /// Searches HeyGen's background-music and sound-effects catalogs
+    /// (semantic ranking, best score first). Unbilled catalog route.
+    pub async fn search_audio_sounds(
+        &self,
+        query: &AudioSoundsQuery,
+    ) -> Result<AudioSoundsResponse> {
+        let mut params = vec![format!(
+            "query={}",
+            urlencoding::encode(&query.query)
+        )];
+        if let Some(ref t) = query.sound_type {
+            params.push(format!("type={}", urlencoding::encode(t)));
+        }
+        if let Some(limit) = query.limit {
+            params.push(format!("limit={limit}"));
+        }
+        if let Some(min_score) = query.min_score {
+            params.push(format!("min_score={min_score}"));
+        }
+        if let Some(ref token) = query.token {
+            params.push(format!("token={}", urlencoding::encode(token)));
+        }
+        let path = format!("/qai/v1/audio/sounds?{}", params.join("&"));
+        let (resp, _meta) = self.get_json::<AudioSoundsResponse>(&path).await?;
+        Ok(resp)
+    }
+
     /// Generates speech from text.
     pub async fn speak(&self, req: &TextToSpeechRequest) -> Result<TextToSpeechResponse> {
         let (mut resp, meta) = self
