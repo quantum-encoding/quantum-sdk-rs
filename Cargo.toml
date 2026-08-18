@@ -4,6 +4,8 @@ version = "0.7.4"
 edition = "2024"
 description = "Rust client SDK for the Quantum AI API"
 license = "MIT"
+# Local agent instructions are not part of the published crate.
+exclude = ["CLAUDE.md"]
 repository = "https://github.com/quantum-encoding/quantum-sdk-rs"
 keywords = ["ai", "sdk", "cosmic-duck", "openai", "anthropic"]
 categories = ["api-bindings", "web-programming::http-client"]
