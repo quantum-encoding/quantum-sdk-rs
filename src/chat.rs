@@ -24,7 +24,8 @@ where
 /// Request body for text generation.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ChatRequest {
-    /// Model ID that determines provider routing (e.g. "claude-sonnet-4-6", "grok-4-1-fast-non-reasoning").
+    /// Model ID that determines provider routing (e.g. "claude-sonnet-4-6",
+    /// "grok-4-1-fast-non-reasoning", "qwen3.8-max"). See `Client::list_models`.
     pub model: String,
 
     /// Conversation history.
@@ -57,7 +58,10 @@ pub struct ChatRequest {
     /// How much chain-of-thought a reasoning model runs before answering.
     /// One of "none", "low", "medium", "high", "xhigh", "max"; `None` =
     /// provider default (medium on GPT-5.5+). `max` is Anthropic Opus 4.7+
-    /// only (OpenAI will 400 on it). An unknown value is rejected with 400.
+    /// only (OpenAI will 400 on it). On hybrid-thinking Qwen models
+    /// (qwen3.8-max, qwen3.7-plus, qwen3.6-flash, qwen3-coder-*) any value
+    /// but "none" enables thinking and "none" disables it. An unknown value
+    /// is rejected with 400.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
 

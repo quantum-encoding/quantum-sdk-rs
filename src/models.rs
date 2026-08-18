@@ -10,7 +10,7 @@ pub struct ModelInfo {
     /// Model identifier used in API requests.
     pub id: String,
 
-    /// Upstream provider (e.g. "anthropic", "xai", "openai").
+    /// Upstream provider (e.g. "anthropic", "xai", "openai", "dashscope").
     pub provider: String,
 
     /// Human-readable model name.

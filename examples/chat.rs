@@ -80,4 +80,36 @@ async fn main() {
             _ => {}
         }
     }
+
+    // --- Qwen hybrid-thinking example ---
+    // reasoning_effort maps onto DashScope's enable_thinking: "none" turns
+    // thinking off entirely; any other value enables it. The thinking trace
+    // arrives in a separate channel from the answer.
+    println!("=== Qwen Hybrid Thinking ===");
+
+    let resp = client
+        .chat(&ChatRequest {
+            model: "qwen3.8-max".into(),
+            messages: vec![ChatMessage::user(
+                "In one sentence, why do hash maps have O(1) lookups?",
+            )],
+            reasoning_effort: Some("high".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("Qwen chat failed");
+
+    println!("Model: {}", resp.model);
+    println!(
+        "Thinking: {} chars of chain-of-thought",
+        resp.thinking().len()
+    );
+    println!("Response: {}", resp.text());
+    if let Some(usage) = &resp.usage {
+        println!(
+            "Tokens: {} in / {} out (cost: {} ticks)",
+            usage.input_tokens, usage.output_tokens, usage.cost_ticks
+        );
+    }
+    println!("Request ID: {}", resp.request_id);
 }

@@ -9,12 +9,16 @@ cargo add quantum-sdk
 ## Quick Start
 
 ```rust
-use quantum_sdk::Client;
+use quantum_sdk::{ChatMessage, ChatRequest, Client};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = Client::new("qai_k_your_key_here");
-    let response = client.chat("gemini-2.5-flash", "Hello! What is quantum computing?").await?;
+    let response = client.chat(&ChatRequest {
+        model: "qwen3.8-max".into(),
+        messages: vec![ChatMessage::user("Hello! What is quantum computing?")],
+        ..Default::default()
+    }).await?;
     println!("{}", response.text());
     Ok(())
 }
@@ -22,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
 
 ## Features
 
-- 110+ endpoints across 10 AI providers and 45+ models
+- 110+ endpoints across 11 AI providers and 50+ models
 - Async/await with Tokio runtime
 - Streaming via `ChatStream` with SSE parsing
 - Strongly typed request/response structs
@@ -40,7 +44,7 @@ use quantum_sdk::{Client, ChatRequest, ChatMessage};
 
 let client = Client::new("qai_k_your_key_here");
 
-let response = client.chat_request(ChatRequest {
+let response = client.chat(&ChatRequest {
     model: "claude-opus-4-8".into(),
     messages: vec![
         ChatMessage::system("You are a helpful assistant."),
@@ -54,6 +58,30 @@ let response = client.chat_request(ChatRequest {
 println!("{}", response.text());
 ```
 
+### Qwen (Alibaba Model Studio)
+
+Hybrid-thinking Qwen models stream their chain of thought alongside the
+answer. `reasoning_effort` maps onto Qwen's `enable_thinking` — `"none"`
+switches thinking off (cheaper, faster); `None` keeps the model default.
+Lineup: `qwen3.8-max`, `qwen3.7-plus`, `qwen3.6-flash`, `qwen-turbo`,
+`qwen3-coder-plus`, `qwen3-coder-flash`, `qwen-vl-max` (vision).
+
+```rust
+use quantum_sdk::{Client, ChatRequest, ChatMessage};
+
+let client = Client::new("qai_k_your_key_here");
+
+let response = client.chat(&ChatRequest {
+    model: "qwen3.8-max".into(),
+    messages: vec![ChatMessage::user("Plan a migration from REST to gRPC")],
+    reasoning_effort: Some("high".into()),
+    ..Default::default()
+}).await?;
+
+println!("thinking: {}", response.thinking());
+println!("answer: {}", response.text());
+```
+
 ### Streaming
 
 ```rust
@@ -62,7 +90,7 @@ use futures::StreamExt;
 
 let client = Client::new("qai_k_your_key_here");
 
-let mut stream = client.chat_stream(ChatRequest {
+let mut stream = client.chat_stream(&ChatRequest {
     model: "claude-opus-4-8".into(),
     messages: vec![ChatMessage::user("Write a haiku about Rust")],
     ..Default::default()
@@ -70,8 +98,10 @@ let mut stream = client.chat_stream(ChatRequest {
 
 while let Some(event) = stream.next().await {
     let event = event?;
-    if let Some(delta) = event.delta_text() {
-        print!("{}", delta);
+    if event.event_type == "content_delta" {
+        if let Some(delta) = &event.delta {
+            print!("{}", delta.text);
+        }
     }
 }
 ```
@@ -168,7 +198,7 @@ All SDKs are at v0.4.0 with type parity verified by scanner.
 |----------|---------|---------|
 | **Rust** | quantum-sdk | `cargo add quantum-sdk` |
 | Go | quantum-sdk | `go get github.com/quantum-encoding/quantum-sdk` |
-| TypeScript | @quantum-encoding/quantum-sdk | `npm i @quantum-encoding/quantum-sdk` |
+| TypeScript | quantum-ai-sdk | `npm i quantum-ai-sdk` |
 | Python | quantum-sdk | `pip install quantum-sdk` |
 | Swift | QuantumSDK | Swift Package Manager |
 | Kotlin | quantum-sdk | Gradle dependency |
