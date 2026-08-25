@@ -43,6 +43,7 @@ pub mod missions;
 pub mod models;
 pub mod rag;
 pub mod realtime;
+pub mod region;
 pub mod scraper;
 pub mod search;
 pub mod security;
@@ -154,6 +155,7 @@ pub use jobs::{
 
 // Keys types
 pub use keys::{CreateKeyRequest, CreateKeyResponse, KeyDetails, ListKeysResponse, StatusResponse};
+pub use region::Region;
 
 // Compute types
 pub use compute::{

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
+use crate::region::Region;
 
 /// Request body for creating an API key.
 #[derive(Debug, Clone, Serialize, Default)]
@@ -20,6 +21,24 @@ pub struct CreateKeyRequest {
     /// Rate limit in requests per minute.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<i32>,
+
+    /// Routing region for every request made with this key: `"americas"`,
+    /// `"europe"`, or `"asia"` (see [`Region`]). The gateway scopes the
+    /// key's inference routing to that region; unset = unscoped legacy
+    /// routing. Honored on standard key creation only — partner and
+    /// ephemeral keys ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+}
+
+impl CreateKeyRequest {
+    /// Sets the key's routing region (typed — rejects unknown values at
+    /// compile time rather than letting the gateway silently route them
+    /// unscoped).
+    pub fn region(mut self, region: Region) -> Self {
+        self.region = Some(region.as_str().to_string());
+        self
+    }
 }
 
 /// Details about an API key (returned on creation and listing).
@@ -53,6 +72,20 @@ pub struct KeyDetails {
     /// Last usage timestamp (RFC 3339). Only present in list responses.
     #[serde(default)]
     pub last_used: Option<String>,
+}
+
+impl KeyDetails {
+    /// The key's effective routing region from its scope (`scope.region`) —
+    /// `"americas"`, `"europe"`, or `"asia"` when the key is region-scoped,
+    /// `None` for unscoped legacy keys. Parse with [`Region::parse`] for the
+    /// typed form.
+    pub fn scope_region(&self) -> Option<&str> {
+        self.scope
+            .as_ref()
+            .and_then(|s| s.get("region"))
+            .and_then(|r| r.as_str())
+            .filter(|r| !r.is_empty())
+    }
 }
 
 /// Response from creating an API key.

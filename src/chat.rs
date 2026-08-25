@@ -73,8 +73,26 @@ pub struct ChatRequest {
     pub cached_content: Option<String>,
 
     /// Provider-specific settings (e.g. Anthropic thinking, xAI search).
+    /// The routing-region override (`provider_options.region`) rides here
+    /// too — prefer the typed [`ChatRequest::region`] for it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<HashMap<String, serde_json::Value>>,
+}
+
+impl ChatRequest {
+    /// Overrides the routing region for THIS chat request — rides
+    /// `provider_options.region` on the wire and wins over the key's scope
+    /// region. Honored by `/qai/v1/chat` only: the agent endpoint routes by
+    /// the key's scope by design (its wire contract carries no
+    /// provider_options).
+    pub fn region(mut self, region: crate::region::Region) -> Self {
+        let opts = self.provider_options.get_or_insert_with(HashMap::new);
+        opts.insert(
+            "region".to_string(),
+            serde_json::Value::String(region.as_str().to_string()),
+        );
+        self
+    }
 }
 
 /// A single message in a conversation.

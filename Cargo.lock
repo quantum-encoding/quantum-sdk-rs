@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "quantum-sdk"
-version = "0.7.4"
+version = "0.8.0"
 dependencies = [
  "bytes",
  "futures-util",
