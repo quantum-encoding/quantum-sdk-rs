@@ -7,6 +7,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
+use crate::region::Region;
 
 /// Max retries for transient errors (502, 503, 429).
 const MAX_RETRIES: u32 = 3;
@@ -56,6 +57,7 @@ pub struct ClientBuilder {
     base_url: String,
     timeout: Duration,
     app: Option<String>,
+    region: Option<Region>,
     extra_headers: Vec<(String, String)>,
 }
 
@@ -87,6 +89,7 @@ impl ClientBuilder {
             // Streaming uses a separate no-timeout client.
             timeout: Duration::from_secs(600),
             app: None,
+            region: None,
             extra_headers: Vec::new(),
         }
     }
@@ -119,6 +122,23 @@ impl ClientBuilder {
     /// the value from `app(...)` wins.
     pub fn app(mut self, app: impl Into<String>) -> Self {
         self.app = Some(app.into());
+        self
+    }
+
+    /// Routes this client's gateway CHAT calls through a region
+    /// (region-scoped inference routing — EU AI Act Art 50).
+    ///
+    /// The region rides `provider_options.region` on every chat request the
+    /// client sends — streaming included — unless the request itself already
+    /// sets one ([`crate::ChatRequest::region`] wins). Only `/qai/v1/chat`
+    /// honors the override; the agent endpoint routes by the key's scope.
+    /// Non-chat endpoints are unaffected.
+    ///
+    /// For keys minted with a region scope the scope already routes every
+    /// request — this hook is for the per-client choice (e.g. an app's user
+    /// picking their region) on top of an unscoped key.
+    pub fn region(mut self, region: Region) -> Self {
+        self.region = Some(region);
         self
     }
 
@@ -199,6 +219,7 @@ impl ClientBuilder {
                 http,
                 auth_header,
                 extra_headers: extra_headers_map,
+                region: self.region,
             }),
         })
     }
@@ -208,6 +229,9 @@ struct ClientInner {
     base_url: String,
     http: reqwest::Client,
     auth_header: HeaderValue,
+    /// Client-level routing region applied to chat requests (see
+    /// [`ClientBuilder::region`]).
+    region: Option<Region>,
     /// Caller-supplied headers (via `ClientBuilder::extra_header` /
     /// `ClientBuilder::app`). Already merged into the non-streaming
     /// client's `default_headers`; the streaming paths build fresh
@@ -246,6 +270,12 @@ impl Client {
     /// Returns the base URL for this client.
     pub(crate) fn base_url(&self) -> &str {
         &self.inner.base_url
+    }
+
+    /// The routing region applied to this client's chat requests, if one
+    /// was configured via [`ClientBuilder::region`].
+    pub fn region(&self) -> Option<Region> {
+        self.inner.region
     }
 
     /// Returns the auth header value (e.g. "Bearer qai_xxx").

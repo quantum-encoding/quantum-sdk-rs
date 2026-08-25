@@ -577,10 +577,32 @@ impl Stream for ChatStream {
 }
 
 impl Client {
+    /// Applies the client-level routing region ([`crate::ClientBuilder::region`])
+    /// to a chat request — unless the request already chose one
+    /// ([`ChatRequest::region`] wins).
+    fn apply_region(&self, req: &mut ChatRequest) {
+        let Some(region) = self.region() else {
+            return;
+        };
+        let already = req
+            .provider_options
+            .as_ref()
+            .is_some_and(|o| o.contains_key("region"));
+        if already {
+            return;
+        }
+        let opts = req.provider_options.get_or_insert_with(HashMap::new);
+        opts.insert(
+            "region".to_string(),
+            serde_json::Value::String(region.as_str().to_string()),
+        );
+    }
+
     /// Sends a non-streaming text generation request.
     pub async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse> {
         let mut req = req.clone();
         req.stream = Some(false);
+        self.apply_region(&mut req);
 
         let (mut resp, meta) = self.post_json::<ChatRequest, ChatResponse>("/qai/v1/chat", &req).await?;
         resp.cost_ticks = meta.cost_ticks;
@@ -624,6 +646,7 @@ impl Client {
         // server sees on the wire.
         let mut req = req.clone();
         req.stream = None;
+        self.apply_region(&mut req);
         let (resp, _meta) = self
             .post_json::<ChatRequest, EstimateResponse>("/qai/v1/chat/estimate", &req)
             .await?;
@@ -656,6 +679,7 @@ impl Client {
     pub async fn chat_stream(&self, req: &ChatRequest) -> Result<ChatStream> {
         let mut req = req.clone();
         req.stream = Some(true);
+        self.apply_region(&mut req);
 
         let (resp, _meta) = self.post_stream_raw("/qai/v1/chat", &req).await?;
 
@@ -826,4 +850,72 @@ where
             return Some((ev, lines));
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::Client;
+    use crate::region::Region;
+
+    fn base_request() -> ChatRequest {
+        ChatRequest {
+            model: "qwen3.8-27b".into(),
+            messages: vec![ChatMessage::user("hi")],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn client_without_region_leaves_requests_alone() {
+        let client = Client::new("qai_k_test");
+        let mut req = base_request();
+        client.apply_region(&mut req);
+        assert!(req.provider_options.is_none());
+    }
+
+    #[test]
+    fn client_region_rides_provider_options() {
+        let client = Client::builder("qai_k_test")
+            .region(Region::Asia)
+            .build()
+            .unwrap();
+        let mut req = base_request();
+        client.apply_region(&mut req);
+        let opts = req.provider_options.unwrap();
+        assert_eq!(opts.get("region").and_then(|v| v.as_str()), Some("asia"));
+    }
+
+    #[test]
+    fn client_region_preserves_other_provider_options() {
+        let client = Client::builder("qai_k_test")
+            .region(Region::Europe)
+            .build()
+            .unwrap();
+        let mut req = base_request();
+        req.provider_options = Some(HashMap::from([(
+            "thinking".to_string(),
+            serde_json::Value::Bool(true),
+        )]));
+        client.apply_region(&mut req);
+        let opts = req.provider_options.unwrap();
+        assert_eq!(opts.get("region").and_then(|v| v.as_str()), Some("europe"));
+        assert_eq!(opts.get("thinking"), Some(&serde_json::Value::Bool(true)));
+    }
+
+    #[test]
+    fn request_level_region_wins_over_client_level() {
+        let client = Client::builder("qai_k_test")
+            .region(Region::Europe)
+            .build()
+            .unwrap();
+        let mut req = base_request().region(Region::Americas);
+        client.apply_region(&mut req);
+        let opts = req.provider_options.unwrap();
+        assert_eq!(
+            opts.get("region").and_then(|v| v.as_str()),
+            Some("americas"),
+            "the request-level choice must win"
+        );
+    }
 }
