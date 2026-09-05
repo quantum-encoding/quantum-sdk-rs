@@ -123,7 +123,20 @@ pub use account::{
 };
 
 // Auth types
+pub use account::{AccountDeleteResponse, DeletionStatus};
 pub use auth::{AuthAppleRequest, AuthResponse, AuthUser};
+pub use auth::{
+    AuthFirebaseRequest, AuthGoogleRequest, RevokeSessionResponse, VerifyKeyRequest,
+    VerifyKeyResponse,
+};
+pub use credits::{
+    LifetimePlan, LifetimePlansResponse, LifetimePurchaseRequest, LifetimePurchaseResponse,
+};
+pub use keys::{
+    DeviceKey, EphemeralKeyRequest, EphemeralKeyResponse, KeyUsageDay, KeyUsageModel,
+    KeyUsageResponse, ListDeviceKeysResponse, PartnerKeyRequest, PartnerKeyResponse,
+    RotateKeyRequest, RotateKeyResponse,
+};
 
 // Batch types
 pub use batch::{

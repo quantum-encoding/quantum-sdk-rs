@@ -109,7 +109,74 @@ pub struct PricingResponse {
     pub pricing: std::collections::HashMap<String, PricingEntry>,
 }
 
+/// What deleting the account did.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountDeleteResponse {
+    /// `"deleted"`.
+    pub status: String,
+    #[serde(default)]
+    pub deleted_at: Option<String>,
+    /// When the content becomes eligible for destruction.
+    #[serde(default)]
+    pub content_purged_after: Option<String>,
+    /// When the pseudonymised payment records may be dropped.
+    #[serde(default)]
+    pub records_kept_until: Option<String>,
+    /// Credit given up by deleting, in USD.
+    #[serde(default)]
+    pub forfeited_credit_usd: Option<f64>,
+    /// The sentence to show the person.
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+/// The account's deletion state: `"active"` with nothing else, or the
+/// deletion record.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeletionStatus {
+    pub status: String,
+    #[serde(default)]
+    pub app: Option<String>,
+    #[serde(default)]
+    pub requested_at: Option<String>,
+    #[serde(default)]
+    pub purge_after: Option<String>,
+    #[serde(default)]
+    pub retention_until: Option<String>,
+    #[serde(default)]
+    pub purged_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AccountDeleteRequest {
+    confirm: &'static str,
+}
+
 impl Client {
+    /// Deletes the account and its sign-in. Remaining credit is forfeited,
+    /// content is erased within 30 days, and payment records are kept for
+    /// as long as the law requires with the identity removed. The
+    /// confirmation phrase the gateway demands is sent for you: calling
+    /// this IS the confirmation.
+    pub async fn account_delete(&self) -> Result<AccountDeleteResponse> {
+        let (resp, _meta) = self
+            .post_json::<AccountDeleteRequest, AccountDeleteResponse>(
+                "/qai/v1/account/delete",
+                &AccountDeleteRequest { confirm: "DELETE" },
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    /// Whether the account is active or being erased, and where the
+    /// erasure has got to.
+    pub async fn account_deletion_status(&self) -> Result<DeletionStatus> {
+        let (resp, _meta) = self
+            .get_json::<DeletionStatus>("/qai/v1/account/deletion")
+            .await?;
+        Ok(resp)
+    }
+
     /// Gets the account credit balance.
     pub async fn account_balance(&self) -> Result<BalanceResponse> {
         let (resp, _meta) = self

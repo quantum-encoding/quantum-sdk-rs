@@ -120,6 +120,43 @@ pub struct DevProgramApplyRequest {
     pub website: Option<String>,
 }
 
+/// A one-time lifetime unlock product.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LifetimePlan {
+    pub id: String,
+    pub label: String,
+    pub amount_usd: f64,
+    /// Seats included; 0 means unlimited.
+    #[serde(default)]
+    pub seats: i64,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Response from [`Client::lifetime_plans`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct LifetimePlansResponse {
+    pub plans: Vec<LifetimePlan>,
+}
+
+/// Request body for buying a lifetime plan.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LifetimePurchaseRequest {
+    pub plan_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_url: Option<String>,
+}
+
+/// Response from [`Client::lifetime_purchase`]: where to pay.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LifetimePurchaseResponse {
+    pub checkout_url: String,
+    pub session_id: String,
+    pub plan: LifetimePlan,
+}
+
 /// Response from dev program application.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DevProgramApplyResponse {
@@ -162,6 +199,28 @@ impl Client {
     pub async fn credit_tiers(&self) -> Result<CreditTiersResponse> {
         let (resp, _meta) = self
             .get_json::<CreditTiersResponse>("/qai/v1/credits/tiers")
+            .await?;
+        Ok(resp)
+    }
+
+    /// List the lifetime unlock plans.
+    pub async fn lifetime_plans(&self) -> Result<LifetimePlansResponse> {
+        let (resp, _meta) = self
+            .get_json::<LifetimePlansResponse>("/qai/v1/credits/lifetime")
+            .await?;
+        Ok(resp)
+    }
+
+    /// Buy a lifetime plan. Returns a checkout URL for payment.
+    pub async fn lifetime_purchase(
+        &self,
+        req: &LifetimePurchaseRequest,
+    ) -> Result<LifetimePurchaseResponse> {
+        let (resp, _meta) = self
+            .post_json::<LifetimePurchaseRequest, LifetimePurchaseResponse>(
+                "/qai/v1/credits/lifetime",
+                req,
+            )
             .await?;
         Ok(resp)
     }
