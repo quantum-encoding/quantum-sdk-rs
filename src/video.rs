@@ -36,6 +36,7 @@ pub struct VideoRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct VideoResponse {
     /// Generated videos.
+    #[serde(default, deserialize_with = "null_as_default")]
     pub videos: Vec<GeneratedVideo>,
 
     /// Model that generated the videos.
@@ -57,7 +58,7 @@ pub struct VideoResponse {
 /// A single generated video.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GeneratedVideo {
-    /// Base64-encoded video data (or a URL).
+    /// Base64-encoded video bytes (never a URL on this route).
     pub base64: String,
 
     /// Video format (e.g. "mp4").
@@ -70,70 +71,31 @@ pub struct GeneratedVideo {
     pub index: i32,
 }
 
-// ---------------------------------------------------------------------------
-// Job response (shared by HeyGen endpoints)
-// ---------------------------------------------------------------------------
-
-/// Response from async video job submission.
-#[derive(Debug, Clone, Deserialize)]
-pub struct JobResponse {
-    /// Job identifier for polling status.
-    pub job_id: String,
-
-    /// Current status.
-    #[serde(default)]
-    pub status: String,
-
-    /// Total cost in ticks (may be 0 until job completes).
-    #[serde(default)]
-    pub cost_ticks: i64,
-
-    /// Additional response fields.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
+/// Alias of [`JobAcceptedResponse`]: the HeyGen routes answer with the
+/// shared 202 job envelope.
+pub type JobResponse = JobAcceptedResponse;
 
 // ---------------------------------------------------------------------------
 // HeyGen Studio
 // ---------------------------------------------------------------------------
 
-/// A clip in a studio video.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct StudioClip {
-    /// Avatar ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar_id: Option<String>,
-
-    /// Voice ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub voice_id: Option<String>,
-
-    /// Script text for this clip.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub script: Option<String>,
-
-    /// Background settings.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub background: Option<serde_json::Value>,
-}
-
-/// Request body for HeyGen studio video creation.
+/// Request body for a HeyGen studio talking-head video: one avatar reading
+/// one script in one voice. All three fields are required.
+///
+/// Submission is gated by a balance preflight estimated from the script
+/// length (per-second render rate at a nominal reading speed, with a
+/// minimum), so an under-funded caller gets 402 at submit rather than a
+/// failed job.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct VideoStudioRequest {
-    /// Video title.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    /// HeyGen avatar id.
+    pub avatar_id: String,
 
-    /// Video clips.
-    pub clips: Vec<StudioClip>,
+    /// Script the avatar speaks.
+    pub script: String,
 
-    /// Video dimensions.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dimension: Option<String>,
-
-    /// Aspect ratio.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aspect_ratio: Option<String>,
+    /// HeyGen voice id.
+    pub voice_id: String,
 }
 
 /// Backwards-compatible alias.
@@ -143,23 +105,23 @@ pub type StudioVideoRequest = VideoStudioRequest;
 // HeyGen Translate
 // ---------------------------------------------------------------------------
 
-/// Request body for video translation.
+/// Request body for video translation. The source must be reachable by
+/// URL; there is no inline-bytes variant on this route.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct VideoTranslateRequest {
-    /// URL of the video to translate.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub video_url: Option<String>,
+    /// URL of the video to translate (required).
+    pub video_url: String,
 
-    /// Base64-encoded video (alternative to URL).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub video_base64: Option<String>,
+    /// Target language (required).
+    pub output_language: String,
 
-    /// Target language code.
-    pub target_language: String,
-
-    /// Source language code (auto-detected if omitted).
+    /// Source language (auto-detected if omitted).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_language: Option<String>,
+
+    /// Title for the translated video.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 /// Backwards-compatible alias.
@@ -169,7 +131,8 @@ pub type TranslateRequest = VideoTranslateRequest;
 // HeyGen Photo Avatar
 // ---------------------------------------------------------------------------
 
-/// Request body for creating a photo avatar video.
+/// Request body for creating a talking-photo video: a photo animated to
+/// speak a script.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct PhotoAvatarRequest {
     /// Base64-encoded photo.
@@ -191,62 +154,151 @@ pub struct PhotoAvatarRequest {
 // HeyGen Digital Twin
 // ---------------------------------------------------------------------------
 
-/// Request body for digital twin video generation.
+/// Request body for creating a digital twin from training footage
+/// (`POST /qai/v1/video/digital-twin`). This trains an avatar; it does not
+/// render a video — see [`TwinVideoRequest`] for that.
+///
+/// A flat fee is held before the body is decoded and released on every
+/// error path, so a rejected request costs nothing but a ledger round-trip.
 #[derive(Debug, Clone, Serialize, Default)]
-pub struct DigitalTwinRequest {
-    /// Digital twin / avatar ID.
+pub struct DigitalTwinCreateRequest {
+    /// Display name for the twin.
+    pub name: String,
+
+    /// URL of the training footage (required).
+    pub video_url: String,
+
+    /// Add the look to an existing avatar group instead of creating one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_group_id: Option<String>,
+}
+
+/// Response from creating a digital twin (synchronous, not a job).
+#[derive(Debug, Clone, Deserialize)]
+pub struct DigitalTwinCreateResponse {
+    /// Echo of the twin's name.
+    #[serde(default)]
+    pub name: String,
+
+    /// Consent-recording link the subject must complete before the twin
+    /// can render.
+    #[serde(default)]
+    pub consent_url: String,
+
+    /// Billing model label.
+    #[serde(default)]
+    pub model: String,
+
+    /// Avatar group id holding the twin (absent if HeyGen returned none).
+    #[serde(default)]
+    pub group_id: Option<String>,
+
+    /// Group training status.
+    #[serde(default)]
+    pub status: Option<String>,
+
+    /// Consent status of the group.
+    #[serde(default)]
+    pub consent_status: Option<String>,
+
+    /// Look id usable as `avatar_id` in [`TwinVideoRequest`].
+    #[serde(default)]
+    pub avatar_id: Option<String>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
+/// Request body for rendering a video of a trained avatar look
+/// (`POST /qai/v1/video/twin-video`, async job type "video/twin").
+///
+/// Exactly one of `script` or `audio_base64` is required; `voice_id` is
+/// required with `script`. Billed per generated second at settle; a
+/// balance preflight rejects under-funded callers with 402 at submit.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TwinVideoRequest {
+    /// Avatar look id (a trained twin or a preset).
     pub avatar_id: String,
 
-    /// Script text.
-    pub script: String,
+    /// Script for a HeyGen TTS voice to read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script: Option<String>,
 
-    /// Voice ID (uses twin's default voice if omitted).
+    /// HeyGen voice id (required with `script`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_id: Option<String>,
 
-    /// Aspect ratio.
+    /// Base64-encoded narration audio (alternative to `script`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_base64: Option<String>,
+
+    /// MIME type of `audio_base64` (e.g. "audio/mpeg").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_media_type: Option<String>,
+
+    /// Aspect ratio (e.g. "16:9").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
+
+    /// Output resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
+
+    /// Video title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    /// Render engine; omitted = best supported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
 // HeyGen Avatars
 // ---------------------------------------------------------------------------
 
-/// A HeyGen avatar.
+/// A HeyGen avatar look.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Avatar {
-    /// Avatar identifier.
+    /// Avatar identifier (what the video routes accept as `avatar_id`).
     pub avatar_id: String,
 
-    /// Avatar name.
-    #[serde(default)]
-    pub name: Option<String>,
+    /// Avatar name. Wire field: `avatar_name`.
+    #[serde(rename = "avatar_name", default)]
+    pub name: String,
 
     /// Avatar gender.
     #[serde(default)]
-    pub gender: Option<String>,
+    pub gender: String,
 
-    /// Preview image URL.
-    #[serde(default)]
-    pub preview_url: Option<String>,
+    /// Preview image URL. Wire field: `preview_image_url`.
+    #[serde(rename = "preview_image_url", default)]
+    pub preview_url: String,
 
-    /// Additional fields.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    /// Look type: "studio_avatar" | "digital_twin" | "photo_avatar".
+    /// Wire field: `type`.
+    #[serde(rename = "type", default)]
+    pub avatar_type: String,
 }
 
 /// Response from listing HeyGen avatars.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AvatarsResponse {
+    /// Available avatars.
+    #[serde(default, deserialize_with = "null_as_default")]
     pub avatars: Vec<Avatar>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
 }
 
 // ---------------------------------------------------------------------------
 // HeyGen Templates
 // ---------------------------------------------------------------------------
 
-/// A HeyGen video template.
+/// A HeyGen video template (API-ready, draft-v4 templates only).
 #[derive(Debug, Clone, Deserialize)]
 pub struct VideoTemplate {
     /// Template identifier.
@@ -254,45 +306,19 @@ pub struct VideoTemplate {
 
     /// Template name.
     #[serde(default)]
-    pub name: Option<String>,
+    pub name: String,
 
-    /// Preview image URL.
-    #[serde(default)]
-    pub preview_url: Option<String>,
-
-    /// Additional fields.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    /// Thumbnail image URL. Wire field: `thumbnail_image_url`.
+    #[serde(rename = "thumbnail_image_url", default)]
+    pub thumbnail_url: String,
 }
 
 /// Response from listing HeyGen video templates.
 #[derive(Debug, Clone, Deserialize)]
 pub struct VideoTemplatesResponse {
-    pub templates: Vec<VideoTemplate>,
-}
-
-// ---------------------------------------------------------------------------
-// HeyGen typed responses (with request_id)
-// ---------------------------------------------------------------------------
-
-/// Response from listing HeyGen avatars (includes request_id).
-#[derive(Debug, Clone, Deserialize)]
-pub struct HeyGenAvatarsResponse {
-    /// Available avatars (raw JSON items).
+    /// Available templates.
     #[serde(default, deserialize_with = "null_as_default")]
-    pub avatars: Vec<serde_json::Value>,
-
-    /// Unique request identifier.
-    #[serde(default)]
-    pub request_id: String,
-}
-
-/// Response from listing HeyGen templates (includes request_id).
-#[derive(Debug, Clone, Deserialize)]
-pub struct HeyGenTemplatesResponse {
-    /// Available templates (raw JSON items).
-    #[serde(default)]
-    pub templates: Vec<serde_json::Value>,
+    pub templates: Vec<VideoTemplate>,
 
     /// Unique request identifier.
     #[serde(default)]
@@ -607,27 +633,34 @@ pub struct HeyGenVoice {
     /// Voice identifier.
     pub voice_id: String,
 
-    /// Voice name.
-    #[serde(default)]
-    pub name: Option<String>,
+    /// Voice name. Wire field: `display_name`.
+    #[serde(rename = "display_name", default)]
+    pub name: String,
 
     /// Language.
     #[serde(default)]
-    pub language: Option<String>,
+    pub language: String,
 
     /// Gender.
     #[serde(default)]
-    pub gender: Option<String>,
+    pub gender: String,
 
-    /// Additional fields.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    /// Preview audio URL. Wire field: `preview_audio`.
+    #[serde(rename = "preview_audio", default)]
+    pub preview_url: String,
 }
 
 /// Response from listing HeyGen voices.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeyGenVoicesResponse {
+    /// Available voices (public catalog followed by the account's private
+    /// voices).
+    #[serde(default, deserialize_with = "null_as_default")]
     pub voices: Vec<HeyGenVoice>,
+
+    /// Unique request identifier.
+    #[serde(default)]
+    pub request_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -652,39 +685,69 @@ impl Client {
         Ok(resp)
     }
 
-    /// Creates a HeyGen studio video from clips.
-    pub async fn video_studio(&self, req: &VideoStudioRequest) -> Result<JobResponse> {
+    /// Creates a HeyGen studio talking-head video (async job type
+    /// "video/studio"). Poll the returned `job_id` for the result.
+    pub async fn video_studio(&self, req: &VideoStudioRequest) -> Result<JobAcceptedResponse> {
         let (resp, _meta) = self
-            .post_json::<VideoStudioRequest, JobResponse>("/qai/v1/video/studio", req)
+            .post_json::<VideoStudioRequest, JobAcceptedResponse>("/qai/v1/video/studio", req)
             .await?;
         Ok(resp)
     }
 
-    /// Translates a video into another language (HeyGen).
-    pub async fn video_translate(&self, req: &VideoTranslateRequest) -> Result<JobResponse> {
+    /// Translates a video into another language (HeyGen; async job type
+    /// "video/translate"). A flat hold is taken at submit and trued up
+    /// when the job settles.
+    pub async fn video_translate(
+        &self,
+        req: &VideoTranslateRequest,
+    ) -> Result<JobAcceptedResponse> {
         let (resp, _meta) = self
-            .post_json::<VideoTranslateRequest, JobResponse>("/qai/v1/video/translate", req)
+            .post_json::<VideoTranslateRequest, JobAcceptedResponse>("/qai/v1/video/translate", req)
             .await?;
         Ok(resp)
     }
 
-    /// Creates a video from a photo avatar (HeyGen).
-    pub async fn video_photo_avatar(&self, req: &PhotoAvatarRequest) -> Result<JobResponse> {
+    /// Creates a talking-photo video (HeyGen; async job).
+    pub async fn video_photo_avatar(
+        &self,
+        req: &PhotoAvatarRequest,
+    ) -> Result<JobAcceptedResponse> {
         let (resp, _meta) = self
-            .post_json::<PhotoAvatarRequest, JobResponse>("/qai/v1/video/photo-avatar", req)
+            .post_json::<PhotoAvatarRequest, JobAcceptedResponse>("/qai/v1/video/photo-avatar", req)
             .await?;
         Ok(resp)
     }
 
-    /// Creates a video from a digital twin avatar (HeyGen).
-    pub async fn video_digital_twin(&self, req: &DigitalTwinRequest) -> Result<JobResponse> {
+    /// Creates a digital twin from training footage (HeyGen). Synchronous;
+    /// the subject must complete `consent_url` before the twin renders.
+    /// Render with [`Client::video_twin`].
+    pub async fn video_digital_twin(
+        &self,
+        req: &DigitalTwinCreateRequest,
+    ) -> Result<DigitalTwinCreateResponse> {
+        let (mut resp, meta) = self
+            .post_json::<DigitalTwinCreateRequest, DigitalTwinCreateResponse>(
+                "/qai/v1/video/digital-twin",
+                req,
+            )
+            .await?;
+        if resp.request_id.is_empty() {
+            resp.request_id = meta.request_id;
+        }
+        Ok(resp)
+    }
+
+    /// Renders a video of a trained avatar look delivering a script or
+    /// supplied narration (HeyGen; async job type "video/twin").
+    pub async fn video_twin(&self, req: &TwinVideoRequest) -> Result<JobAcceptedResponse> {
         let (resp, _meta) = self
-            .post_json::<DigitalTwinRequest, JobResponse>("/qai/v1/video/digital-twin", req)
+            .post_json::<TwinVideoRequest, JobAcceptedResponse>("/qai/v1/video/twin-video", req)
             .await?;
         Ok(resp)
     }
 
-    /// Lists available HeyGen avatars.
+    /// Lists available HeyGen avatar looks (public and private, every page
+    /// aggregated).
     pub async fn video_avatars(&self) -> Result<AvatarsResponse> {
         let (resp, _meta) = self
             .get_json::<AvatarsResponse>("/qai/v1/video/avatars")
@@ -692,7 +755,7 @@ impl Client {
         Ok(resp)
     }
 
-    /// Lists available HeyGen video templates.
+    /// Lists available HeyGen video templates (API-ready templates only).
     pub async fn video_templates(&self) -> Result<VideoTemplatesResponse> {
         let (resp, _meta) = self
             .get_json::<VideoTemplatesResponse>("/qai/v1/video/templates")
@@ -726,8 +789,10 @@ impl Client {
     ///
     /// Returns the accepted-job envelope — poll with `get_job` / `poll_job`
     /// (or SSE via `stream_job`) until "completed"/"failed", then read
-    /// `result.video_url`. Deep validation happens at execution time, so
-    /// violations surface as a failed job rather than a 4xx at submit.
+    /// `result.video_url`. Submit rejects at once with 400 for an empty
+    /// `variables` map and 402 when the balance is below the render
+    /// preflight; only HeyGen-side validation of the variable values is
+    /// deferred and surfaces as a failed job.
     pub async fn video_template_generate(
         &self,
         template_id: &str,
@@ -779,5 +844,100 @@ impl Client {
         }
         let (resp, _meta) = self.get_json::<VideoBatchStatusResponse>(&path).await?;
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys(value: &serde_json::Value) -> Vec<String> {
+        let mut keys: Vec<String> = value.as_object().expect("object").keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn studio_request_carries_the_three_required_keys() {
+        let json = serde_json::to_value(VideoStudioRequest {
+            avatar_id: "av".into(),
+            script: "Hello".into(),
+            voice_id: "vc".into(),
+        })
+        .unwrap();
+        assert_eq!(keys(&json), ["avatar_id", "script", "voice_id"]);
+    }
+
+    #[test]
+    fn translate_request_uses_video_url_and_output_language() {
+        let json = serde_json::to_value(VideoTranslateRequest {
+            video_url: "https://x/v.mp4".into(),
+            output_language: "es".into(),
+            source_language: None,
+            title: Some("t".into()),
+        })
+        .unwrap();
+        assert_eq!(keys(&json), ["output_language", "title", "video_url"]);
+    }
+
+    #[test]
+    fn twin_create_and_twin_video_are_different_routes() {
+        let json = serde_json::to_value(DigitalTwinCreateRequest {
+            name: "Rich".into(),
+            video_url: "https://x/train.mp4".into(),
+            avatar_group_id: None,
+        })
+        .unwrap();
+        assert_eq!(keys(&json), ["name", "video_url"]);
+
+        let resp: DigitalTwinCreateResponse = serde_json::from_str(
+            r#"{"name":"Rich","consent_url":"https://heygen/consent/1","model":"heygen-digital-twin",
+                "request_id":"req_t","group_id":"grp_1","status":"pending",
+                "consent_status":"not_started","avatar_id":"look_1"}"#,
+        )
+        .unwrap();
+        assert_eq!(resp.group_id.as_deref(), Some("grp_1"));
+        assert_eq!(resp.avatar_id.as_deref(), Some("look_1"));
+
+        let json = serde_json::to_value(TwinVideoRequest {
+            avatar_id: "look_1".into(),
+            script: Some("Hi".into()),
+            voice_id: Some("v1".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(keys(&json), ["avatar_id", "script", "voice_id"]);
+    }
+
+    #[test]
+    fn heygen_catalog_types_read_the_wire_names() {
+        let avatars: AvatarsResponse = serde_json::from_str(
+            r#"{"avatars":[{"avatar_id":"a1","avatar_name":"Anna","gender":"female",
+                "preview_image_url":"https://x/a.png","type":"studio_avatar"}],"request_id":"r"}"#,
+        )
+        .unwrap();
+        assert_eq!(avatars.avatars[0].name, "Anna");
+        assert_eq!(avatars.avatars[0].preview_url, "https://x/a.png");
+        assert_eq!(avatars.avatars[0].avatar_type, "studio_avatar");
+
+        let templates: VideoTemplatesResponse = serde_json::from_str(
+            r#"{"templates":[{"template_id":"t1","name":"Promo",
+                "thumbnail_image_url":"https://x/t.png"}],"request_id":"r"}"#,
+        )
+        .unwrap();
+        assert_eq!(templates.templates[0].thumbnail_url, "https://x/t.png");
+
+        let voices: HeyGenVoicesResponse = serde_json::from_str(
+            r#"{"voices":[{"voice_id":"v1","display_name":"Ava","language":"en","gender":"female",
+                "preview_audio":"https://x/v.mp3"}],"request_id":"r"}"#,
+        )
+        .unwrap();
+        assert_eq!(voices.voices[0].name, "Ava");
+        assert_eq!(voices.voices[0].preview_url, "https://x/v.mp3");
+
+        // Empty catalogs are serialised as null by the gateway.
+        let none: AvatarsResponse =
+            serde_json::from_str(r#"{"avatars":null,"request_id":"r"}"#).unwrap();
+        assert!(none.avatars.is_empty());
     }
 }

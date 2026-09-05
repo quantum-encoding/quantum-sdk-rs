@@ -57,7 +57,10 @@ pub struct AvatarRealtimeRequest {
     /// HeyGen photo-avatar / motion-avatar look id (required for all kinds).
     pub avatar_id: String,
 
-    /// Voice id — required for "tts" and "text_stream", must be omitted for "audio".
+    /// Voice id — required for "tts" and "text_stream", must be omitted for
+    /// "audio". The omission rule is enforced by the gateway's HeyGen
+    /// client before the upstream call and surfaces as a 502
+    /// `provider_error`, not a 400.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_id: Option<String>,
 
@@ -135,8 +138,10 @@ pub struct AvatarRealtimeTextRequest {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub delta: String,
 
-    /// True closes the text input (appending afterwards fails upstream with
-    /// a 410 provider_error). Wire field: `final`.
+    /// True closes the text input. Appending afterwards is refused by
+    /// HeyGen; the gateway passes the upstream 4xx through as a
+    /// `provider_error` (410 per HeyGen's documentation). Wire field:
+    /// `final`.
     #[serde(rename = "final")]
     pub is_final: bool,
 }

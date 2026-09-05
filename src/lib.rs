@@ -99,14 +99,13 @@ pub use image::{GeneratedImage, ImageEditRequest, ImageEditResponse, ImageReques
 
 // Video types
 pub use video::{
-    Avatar, AvatarsResponse, DigitalTwinRequest, GeneratedVideo, HeyGenAvatarsResponse,
-    HeyGenTemplatesResponse, HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest,
-    StudioClip, StudioVideoRequest, TranslateRequest, VideoBatchItem, VideoBatchItemError,
-    VideoBatchStatusQuery, VideoBatchStatusResponse, VideoBatchSubmitRequest,
-    VideoBatchSubmitResponse, VideoRequest, VideoResponse, VideoStudioRequest,
-    VideoSubtitlePosition, VideoTemplate, VideoTemplateDetail, VideoTemplateDetailResponse,
-    VideoTemplateDimension, VideoTemplateGenerateRequest, VideoTemplateScene,
-    VideoTemplateSceneVariable, VideoTemplateSubtitles, VideoTemplatesResponse,
+    Avatar, AvatarsResponse, DigitalTwinCreateRequest, DigitalTwinCreateResponse, GeneratedVideo,
+    HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, StudioVideoRequest,
+    TranslateRequest, TwinVideoRequest, VideoBatchItem, VideoBatchItemError, VideoBatchStatusQuery,
+    VideoBatchStatusResponse, VideoBatchSubmitRequest, VideoBatchSubmitResponse, VideoRequest,
+    VideoResponse, VideoStudioRequest, VideoSubtitlePosition, VideoTemplate, VideoTemplateDetail,
+    VideoTemplateDetailResponse, VideoTemplateDimension, VideoTemplateGenerateRequest,
+    VideoTemplateScene, VideoTemplateSceneVariable, VideoTemplateSubtitles, VideoTemplatesResponse,
     VideoTranslateRequest,
 };
 
@@ -119,17 +118,16 @@ pub use avatar::{
 
 // Audio types
 pub use audio::{
-    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse, AudioSound,
-    AudioSoundsQuery, AudioSoundsResponse, DialogueRequest, DialogueResponse, DialogueTurn,
-    DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest, ElevenMusicResponse,
-    FinetuneInfo, IsolateRequest, IsolateVoiceRequest, IsolateVoiceResponse, ListFinetunesResponse,
-    MusicAdvancedClip, MusicAdvancedRequest, MusicAdvancedResponse, MusicClip,
-    MusicFinetuneCreateRequest, MusicFinetuneInfo, MusicFinetuneListResponse, MusicRequest,
-    MusicResponse, MusicSection, RemixRequest, RemixVoiceRequest, RemixVoiceResponse,
-    SoundEffectRequest, SoundEffectResponse, SpeechToSpeechRequest, SpeechToSpeechResponse,
-    SpeechToTextRequest, SpeechToTextResponse, StarfishTTSRequest, StarfishTTSResponse, SttRequest,
-    SttResponse, TextToSpeechRequest, TextToSpeechResponse, TtsRequest, TtsResponse,
-    VoiceDesignRequest, VoiceDesignResponse, VoicePreview,
+    AlignRequest, AlignResponse, AlignedWord, AudioSound, AudioSoundsQuery, AudioSoundsResponse,
+    DialogueRequest, DialogueResponse, DialogueTurn, DialogueVoice, DubRequest, DubResponse,
+    ElevenMusicClip, ElevenMusicRequest, ElevenMusicResponse, FinetuneInfo, IsolateRequest,
+    IsolateVoiceRequest, IsolateVoiceResponse, ListFinetunesResponse, MusicClip,
+    MusicFinetuneCreateRequest, MusicRequest, MusicResponse, MusicSection, RemixRequest,
+    RemixVoiceRequest, RemixVoiceResponse, SoundEffectRequest, SoundEffectResponse,
+    SpeechToSpeechRequest, SpeechToSpeechResponse, SpeechToTextRequest, SpeechToTextResponse,
+    StarfishTTSRequest, StarfishTTSResponse, SttRequest, SttResponse, TextToSpeechRequest,
+    TextToSpeechResponse, TtsRequest, TtsResponse, VoiceDesignRequest, VoiceDesignResponse,
+    VoicePreview,
 };
 
 // Account types
@@ -174,7 +172,7 @@ pub use credits::{
 // Jobs types
 pub use jobs::{
     JobAcceptedResponse, JobCreateRequest, JobCreateResponse, JobListEntry, JobListResponse,
-    JobStatusResponse, JobStreamEvent, JobSummary, ListJobsResponse,
+    JobStatusResponse, JobStreamEvent, ListJobsResponse,
 };
 
 // Keys types
@@ -190,9 +188,8 @@ pub use compute::{
 
 // Voices types
 pub use voices::{
-    AddVoiceFromLibraryRequest, AddVoiceFromLibraryResponse, CloneVoiceFile, CloneVoiceRequest,
-    CloneVoiceResponse, SharedVoice, SharedVoicesResponse, Voice, VoiceInfo, VoiceLibraryQuery,
-    VoicesResponse,
+    AddVoiceFromLibraryRequest, AddVoiceFromLibraryResponse, CloneVoiceRequest, CloneVoiceResponse,
+    SharedVoice, SharedVoicesResponse, Voice, VoiceInfo, VoiceLibraryQuery, VoicesResponse,
 };
 
 // 3D Mesh pipeline types

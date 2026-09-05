@@ -11,11 +11,17 @@ use crate::error::Result;
 /// Request body for vision analysis endpoints.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct VisionRequest {
-    /// Base64-encoded image (with or without data: prefix).
+    /// Base64-encoded image (with or without data: prefix). The reliable
+    /// input: the bytes reach the model as an image part on every gateway
+    /// version.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_base64: Option<String>,
 
-    /// Image URL (fetched by the model provider).
+    /// Image URL. Current gateways fetch it server-side (through an
+    /// SSRF-guarded client) and answer 400 when the fetch fails; gateways
+    /// older than the September 2026 vision fix pasted the URL into the
+    /// prompt as text, billing a model call that never saw the image.
+    /// Prefer `image_base64` unless you know the gateway you talk to.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
 
@@ -209,6 +215,11 @@ pub struct TextOverlay {
 
 impl Client {
     /// Full combined vision analysis (scene + objects + quality + OCR + relevance).
+    ///
+    /// Each `vision_*` method only sets the default profile for its route;
+    /// a `profile` in the request overrides it, so `vision_detect` with
+    /// `profile: Some("ocr")` runs OCR. Leave `profile` unset to get the
+    /// analysis the method name promises.
     pub async fn vision_analyze(&self, req: &VisionRequest) -> Result<VisionResponse> {
         let (resp, _meta) = self
             .post_json::<VisionRequest, VisionResponse>("/qai/v1/vision/analyze", req)
@@ -216,7 +227,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Object detection with bounding boxes.
+    /// Object detection with bounding boxes (default profile "objects";
+    /// a request `profile` overrides it).
     pub async fn vision_detect(&self, req: &VisionRequest) -> Result<VisionResponse> {
         let (resp, _meta) = self
             .post_json::<VisionRequest, VisionResponse>("/qai/v1/vision/detect", req)
@@ -224,7 +236,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Scene description and tags.
+    /// Scene description and tags (default profile "scene"; a request
+    /// `profile` overrides it).
     pub async fn vision_describe(&self, req: &VisionRequest) -> Result<VisionResponse> {
         let (resp, _meta) = self
             .post_json::<VisionRequest, VisionResponse>("/qai/v1/vision/describe", req)
@@ -232,7 +245,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Text extraction and overlay metadata (OCR).
+    /// Text extraction and overlay metadata (default profile "ocr"; a
+    /// request `profile` overrides it).
     pub async fn vision_ocr(&self, req: &VisionRequest) -> Result<VisionResponse> {
         let (resp, _meta) = self
             .post_json::<VisionRequest, VisionResponse>("/qai/v1/vision/ocr", req)
@@ -240,7 +254,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Image quality assessment.
+    /// Image quality assessment (default profile "quality"; a request
+    /// `profile` overrides it).
     pub async fn vision_quality(&self, req: &VisionRequest) -> Result<VisionResponse> {
         let (resp, _meta) = self
             .post_json::<VisionRequest, VisionResponse>("/qai/v1/vision/quality", req)
