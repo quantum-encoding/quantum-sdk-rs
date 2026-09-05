@@ -2,68 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
-
-// ---------------------------------------------------------------------------
-// Search Options
-// ---------------------------------------------------------------------------
-
-/// Options for configuring web search requests.
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct SearchOptions {
-    /// Number of results to return.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub count: Option<i32>,
-
-    /// Zero-based result offset for pagination.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<i32>,
-
-    /// Country code filter (e.g. "US", "GB").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub country: Option<String>,
-
-    /// Language code filter (e.g. "en", "fr").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-
-    /// Time range filter (e.g. "24h", "7d", "30d").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub freshness: Option<String>,
-
-    /// Adult content filtering ("off", "moderate", "strict").
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub safe_search: Option<String>,
-}
-
-/// Options for configuring LLM context search requests.
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct ContextOptions {
-    /// Number of context chunks to return.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub count: Option<i32>,
-
-    /// Country code filter.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub country: Option<String>,
-
-    /// Language code filter.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-
-    /// Time range filter.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub freshness: Option<String>,
-}
-
-/// A message in a search-answer conversation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchMessage {
-    /// Message role ("user" or "assistant").
-    pub role: String,
-
-    /// Message text content.
-    pub content: String,
-}
+use crate::serde_util::null_as_default;
 
 // ---------------------------------------------------------------------------
 // Web Search
@@ -100,26 +39,95 @@ pub struct WebSearchRequest {
     pub safesearch: Option<String>,
 }
 
+/// How Brave understood the query.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct QueryInfo {
+    /// The query as submitted.
+    #[serde(default)]
+    pub original: String,
+
+    /// The query after spell correction, when it was altered.
+    #[serde(default)]
+    pub altered: Option<String>,
+
+    /// Detected query language.
+    #[serde(default)]
+    pub language: Option<String>,
+
+    /// True when spellcheck was disabled for the request.
+    #[serde(default)]
+    pub spellcheck_off: bool,
+}
+
+/// Parsed parts of a result URL.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MetaUrl {
+    #[serde(default)]
+    pub scheme: String,
+    #[serde(default)]
+    pub netloc: String,
+    #[serde(default)]
+    pub hostname: String,
+    /// Favicon URL for the result's site.
+    #[serde(default)]
+    pub favicon: Option<String>,
+    #[serde(default)]
+    pub path: String,
+}
+
+/// A thumbnail image.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Thumbnail {
+    /// Image URL.
+    #[serde(default)]
+    pub src: String,
+    #[serde(default)]
+    pub height: i32,
+    #[serde(default)]
+    pub width: i32,
+}
+
 /// A single web search result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WebResult {
     /// Page title.
+    #[serde(default)]
     pub title: String,
 
     /// Page URL.
+    #[serde(default)]
     pub url: String,
 
     /// Result description / snippet.
     #[serde(default)]
     pub description: String,
 
+    /// Further snippets from the page.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub extra_snippets: Vec<String>,
+
     /// Age of the result (e.g. "2 hours ago").
     #[serde(default)]
     pub age: Option<String>,
 
-    /// Favicon URL.
+    /// Page language.
     #[serde(default)]
-    pub favicon: Option<String>,
+    pub language: Option<String>,
+
+    /// Parsed URL parts, including the site favicon.
+    #[serde(default)]
+    pub meta_url: Option<MetaUrl>,
+
+    /// Page thumbnail.
+    #[serde(default)]
+    pub thumbnail: Option<Thumbnail>,
+}
+
+impl WebResult {
+    /// Favicon URL for the result's site, when Brave supplied one.
+    pub fn favicon(&self) -> Option<&str> {
+        self.meta_url.as_ref()?.favicon.as_deref()
+    }
 }
 
 /// A news search result.
@@ -142,6 +150,10 @@ pub struct NewsResult {
     /// Publisher name.
     #[serde(default)]
     pub source: Option<String>,
+
+    /// Article thumbnail.
+    #[serde(default)]
+    pub thumbnail: Option<Thumbnail>,
 }
 
 /// A video search result.
@@ -157,9 +169,9 @@ pub struct VideoResult {
     #[serde(default)]
     pub description: String,
 
-    /// Thumbnail URL.
+    /// Video thumbnail.
     #[serde(default)]
-    pub thumbnail: Option<String>,
+    pub thumbnail: Option<Thumbnail>,
 
     /// Age of the video.
     #[serde(default)]
@@ -167,18 +179,31 @@ pub struct VideoResult {
 }
 
 /// An infobox (knowledge panel) result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Infobox {
     /// Infobox title.
+    #[serde(default)]
     pub title: String,
+
+    /// Short description.
+    #[serde(default)]
+    pub description: String,
 
     /// Long description.
     #[serde(default)]
-    pub description: String,
+    pub long_desc: Option<String>,
 
     /// Source URL.
     #[serde(default)]
     pub url: Option<String>,
+
+    /// Infobox kind (e.g. "generic", "entity").
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+
+    /// Images attached to the panel.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub images: Vec<Thumbnail>,
 }
 
 /// Backwards-compatible alias.
@@ -200,40 +225,56 @@ pub struct Discussion {
     /// Age of the discussion.
     #[serde(default)]
     pub age: Option<String>,
-
-    /// Forum name.
-    #[serde(default)]
-    pub forum: Option<String>,
 }
 
 /// Backwards-compatible alias.
 pub type DiscussionResult = Discussion;
 
-/// Response from the web search endpoint.
-#[derive(Debug, Clone, Deserialize)]
+/// Response from the web search endpoint: Brave's own envelope, relayed
+/// unchanged. Each result family arrives as `{"results": [...]}` and is
+/// flattened to its list here.
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct WebSearchResponse {
-    /// Original query.
-    pub query: String,
+    /// How Brave understood the query.
+    #[serde(default)]
+    pub query: Option<QueryInfo>,
 
     /// Web search results.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "results_list")]
     pub web: Vec<WebResult>,
 
     /// News results.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "results_list")]
     pub news: Vec<NewsResult>,
 
     /// Video results.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "results_list")]
     pub videos: Vec<VideoResult>,
 
-    /// Infobox / knowledge panel entries.
+    /// Knowledge panel, when Brave produced one.
     #[serde(default)]
-    pub infobox: Vec<Infobox>,
+    pub infobox: Option<Infobox>,
 
     /// Discussion / forum results.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "results_list")]
     pub discussions: Vec<Discussion>,
+}
+
+/// Deserializes a Brave result family (`{"results": [...]}`, or `null`)
+/// down to its list.
+fn results_list<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    #[derive(Deserialize)]
+    struct Family<T> {
+        #[serde(default = "Vec::new")]
+        results: Vec<T>,
+    }
+    Ok(Option::<Family<T>>::deserialize(deserializer)?
+        .map(|f| f.results)
+        .unwrap_or_default())
 }
 
 // ---------------------------------------------------------------------------
@@ -303,51 +344,12 @@ pub struct SearchContextResponse {
     pub chunks: Vec<SearchContextChunk>,
 
     /// Source references.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub sources: Vec<SearchContextSource>,
 
-    /// Original query.
+    /// The query, as echoed by Brave.
+    #[serde(default)]
     pub query: String,
-}
-
-/// LLM-optimised context response from web search.
-///
-/// Unlike [`SearchContextResponse`], this returns simple string sources
-/// and is the type returned by the Go SDK's `SearchContext` method.
-#[derive(Debug, Clone, Deserialize)]
-pub struct LLMContextResponse {
-    /// Original search query.
-    pub query: String,
-
-    /// Content chunks suitable for LLM consumption.
-    #[serde(default)]
-    pub chunks: Vec<ContextChunk>,
-
-    /// Source URLs used.
-    #[serde(default)]
-    pub sources: Vec<String>,
-}
-
-/// A single chunk of context from a web page (simple variant).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContextChunk {
-    /// Extracted page content.
-    pub content: String,
-
-    /// Source URL.
-    pub url: String,
-
-    /// Page title.
-    #[serde(default)]
-    pub title: String,
-
-    /// Relevance score.
-    #[serde(default)]
-    pub score: f64,
-
-    /// Content type (e.g. "text/html").
-    #[serde(default)]
-    pub content_type: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -396,8 +398,9 @@ pub struct SearchAnswerChoice {
     /// Choice index.
     pub index: i32,
 
-    /// The generated message.
-    pub message: SearchAnswerMessage,
+    /// The generated message, absent when the choice carries none.
+    #[serde(default)]
+    pub message: Option<SearchAnswerMessage>,
 
     /// Finish reason (e.g. "stop").
     #[serde(default)]
@@ -419,7 +422,7 @@ pub struct SearchAnswerResponse {
     pub id: String,
 
     /// Citations used in the answer.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub citations: Vec<SearchAnswerCitation>,
 }
 
@@ -466,7 +469,7 @@ pub struct GoogleSearchSupport {
     pub text: String,
 
     /// Indices into `citations` for the sources backing this span.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub grounding_chunk_indices: Vec<i32>,
 }
 
@@ -479,7 +482,7 @@ pub struct GoogleSearchResponse {
     pub answer: String,
 
     /// Web sources Gemini grounded its answer on.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub citations: Vec<GoogleSearchCitation>,
 
     /// HTML/CSS widget of search-suggestion chips. Google's grounding terms
@@ -489,11 +492,11 @@ pub struct GoogleSearchResponse {
 
     /// The queries Gemini executed against Google Search; each one is a
     /// billing unit.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub web_search_queries: Vec<String>,
 
     /// Inline-citation spans linking text segments to citations.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub supports: Vec<GoogleSearchSupport>,
 }
 

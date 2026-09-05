@@ -13,8 +13,10 @@ pub enum Error {
     Http(reqwest::Error),
     /// A serialization or deserialization error occurred.
     Json(serde_json::Error),
-    /// A WebSocket error occurred (realtime sessions).
-    WebSocket(tokio_tungstenite::tungstenite::Error),
+    /// A WebSocket error occurred (realtime sessions). Boxed: the
+    /// tungstenite error carries a full HTTP response and would otherwise
+    /// make every `Result` in the crate that size.
+    WebSocket(Box<tokio_tungstenite::tungstenite::Error>),
 }
 
 impl fmt::Display for Error {
@@ -41,7 +43,7 @@ impl std::error::Error for Error {
 
 impl From<tokio_tungstenite::tungstenite::Error> for Error {
     fn from(err: tokio_tungstenite::tungstenite::Error) -> Self {
-        Error::WebSocket(err)
+        Error::WebSocket(Box::new(err))
     }
 }
 

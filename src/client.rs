@@ -688,7 +688,7 @@ fn parse_response_meta(resp: &reqwest::Response) -> ResponseMeta {
 }
 
 /// Parses an API error from a non-2xx response.
-async fn parse_api_error(resp: reqwest::Response, request_id: &str) -> Error {
+pub(crate) async fn parse_api_error(resp: reqwest::Response, request_id: &str) -> Error {
     let status_code = resp.status().as_u16();
     let status_text = resp
         .status()

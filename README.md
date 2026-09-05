@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 - Strongly typed request/response structs
 - Agent orchestration with SSE event streams
 - GPU/CPU compute rental (requires per-account admin approval)
-- Batch processing (50% discount)
+- Batch processing (async jobs)
 - Zero-copy deserialization with serde
 
 ## Examples
@@ -169,7 +169,7 @@ while let Some(event) = stream.next().await {
 | Keys | 8 | Create, list, revoke, rotate, usage, device, ephemeral and partner keys |
 | Account | 5 | Balance, usage, summary, deletion |
 | Credits | 8 | Packs, tiers, purchase, lifetime plans |
-| Batch | 4 | 50% discount batch processing |
+| Batch | 4 | Async batch job processing |
 | Realtime | 3 | Voice sessions |
 | Models | 2 | Model list + pricing |
 

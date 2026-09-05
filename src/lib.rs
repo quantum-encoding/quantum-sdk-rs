@@ -202,7 +202,7 @@ pub use mesh::{
 };
 
 // Contact types
-pub use contact::{ContactRequest, ContactResponse};
+pub use contact::ContactRequest;
 
 // Embeddings types
 pub use embeddings::{EmbedRequest, EmbedResponse};
@@ -210,8 +210,8 @@ pub use embeddings::{EmbedRequest, EmbedResponse};
 // Document types
 pub use documents::{
     ChunkDocumentRequest, ChunkDocumentResponse, ChunkRequest, ChunkResponse, DocumentChunk,
-    DocumentRequest, DocumentResponse, ProcessDocumentRequest, ProcessDocumentResponse,
-    ProcessRequest, ProcessResponse,
+    DocumentImage, DocumentMeta, DocumentRequest, DocumentResponse, ProcessDocumentRequest,
+    ProcessDocumentResponse, ProcessRequest, ProcessResponse,
 };
 
 // RAG types
@@ -230,12 +230,11 @@ pub use scraper::{
 
 // Search types
 pub use search::{
-    ContextChunk, ContextOptions, Discussion, DiscussionResult, GoogleSearchCitation,
-    GoogleSearchRequest, GoogleSearchResponse, GoogleSearchSupport, Infobox, InfoboxResult,
-    LLMContextResponse, NewsResult, SearchAnswerChoice, SearchAnswerCitation, SearchAnswerMessage,
-    SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk, SearchContextRequest,
-    SearchContextResponse, SearchContextSource, SearchMessage, SearchOptions, VideoResult,
-    WebResult, WebSearchRequest, WebSearchResponse,
+    Discussion, DiscussionResult, GoogleSearchCitation, GoogleSearchRequest, GoogleSearchResponse,
+    GoogleSearchSupport, Infobox, InfoboxResult, MetaUrl, NewsResult, QueryInfo,
+    SearchAnswerChoice, SearchAnswerCitation, SearchAnswerMessage, SearchAnswerRequest,
+    SearchAnswerResponse, SearchContextChunk, SearchContextRequest, SearchContextResponse,
+    SearchContextSource, Thumbnail, VideoResult, WebResult, WebSearchRequest, WebSearchResponse,
 };
 
 // Model types

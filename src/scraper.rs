@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::Result;
-use crate::jobs::{JobCreateRequest, JobCreateResponse};
 
 // ---------------------------------------------------------------------------
 // Scrape
@@ -204,15 +203,5 @@ impl Client {
             .post_json::<ScreenshotRequest, ScreenshotResponse>("/qai/v1/scraper/screenshot", req)
             .await?;
         Ok(resp)
-    }
-
-    /// Submits a large screenshot batch as an async job.
-    pub async fn screenshot_job(&self, req: &ScreenshotRequest) -> Result<JobCreateResponse> {
-        let params = serde_json::to_value(req)?;
-        self.create_job(&JobCreateRequest {
-            job_type: "screenshot".into(),
-            params,
-        })
-        .await
     }
 }

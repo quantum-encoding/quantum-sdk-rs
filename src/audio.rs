@@ -1115,7 +1115,7 @@ impl Client {
             let part = reqwest::multipart::Part::bytes(file.data)
                 .file_name(file.filename)
                 .mime_str(&file.mime_type)
-                .map_err(|e| crate::error::Error::Http(e.into()))?;
+                .map_err(crate::error::Error::Http)?;
             form = form.part("files", part);
         }
 

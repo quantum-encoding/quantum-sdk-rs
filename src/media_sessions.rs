@@ -4,8 +4,10 @@
 //! A session pins three things on the gateway: a Gemini Files API resource
 //! (uploaded via [`Client::file_upload`](crate::Client::file_upload)), a Vertex
 //! context cache built over that file at session boot, and the conversation
-//! history. Every chat turn therefore sends only the next user message and is
-//! billed at the cached-read rate rather than re-sending the whole file.
+//! history. While the cache is alive a chat turn sends only the next user
+//! message and is billed at the cached-read rate; once `expires_at` has
+//! passed the turn re-sends the file inline at the full input rate and the
+//! gateway rebuilds the cache afterwards.
 //!
 //! Sessions are stored server-side, so the same session id resumes from any
 //! device.
@@ -78,7 +80,8 @@ pub struct MediaSession {
     #[serde(default)]
     pub mime_type: String,
 
-    /// Label of the uploaded file, when the client supplied one.
+    /// The session's display name, else the tail of the file URI, else
+    /// "untitled media session".
     #[serde(default)]
     pub file_display_name: Option<String>,
 
@@ -171,7 +174,8 @@ pub struct MediaSessionChatResponse {
 /// Response from `DELETE /qai/v1/media-sessions/{id}`.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct MediaSessionDeleteResponse {
-    /// True once the session record and its cache are released. Deleting an
+    /// True once the session record is deleted; releasing the context cache
+    /// is best-effort and does not change the answer. Deleting an
     /// already-absent session also reports `true` — the call is idempotent.
     #[serde(default)]
     pub deleted: bool,
@@ -196,7 +200,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Lists the caller's media sessions, most recently used first.
+    /// Lists the caller's media sessions, most recently used first, at most
+    /// fifty.
     ///
     /// `GET /qai/v1/media-sessions`
     pub async fn media_session_list(&self) -> Result<MediaSessionListResponse> {
@@ -233,7 +238,8 @@ impl Client {
         Ok(resp)
     }
 
-    /// Deletes a media session and releases its context cache.
+    /// Deletes a media session; its context cache is released on a
+    /// best-effort basis.
     ///
     /// `DELETE /qai/v1/media-sessions/{id}`
     pub async fn media_session_delete(&self, id: &str) -> Result<MediaSessionDeleteResponse> {

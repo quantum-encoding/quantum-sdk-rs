@@ -48,7 +48,7 @@ type WsStream = futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream
 /// Configuration for a realtime voice session.
 #[derive(Debug, Clone, Serialize)]
 pub struct RealtimeConfig {
-    /// Voice to use (e.g. "Sal", "Eve", "Vesper" for xAI; "alloy", "echo" for OpenAI).
+    /// Voice to use (e.g. "Sal", "Eve", "Vesper" on xAI).
     pub voice: String,
 
     /// System instructions for the AI.
@@ -61,8 +61,10 @@ pub struct RealtimeConfig {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<serde_json::Value>,
 
-    /// Model to use for the realtime session (e.g. "gpt-4o-realtime-preview").
-    /// When empty, the server picks the default for the provider.
+    /// Model for the session (e.g. "grok-realtime-beta"). Sent to the gateway
+    /// as the `model` query parameter, which it forwards upstream and bills
+    /// against; empty means the gateway default. Also placed in the
+    /// `session.update` frame.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub model: String,
 }
@@ -121,6 +123,14 @@ pub enum RealtimeEvent {
     /// An error from the realtime API.
     Error { message: String },
 
+    /// The peer closed the socket. `reason` carries the close frame's text,
+    /// which the gateway uses to say why ("insufficient balance", "session
+    /// duration limit reached"); empty on a plain hang-up.
+    Closed { code: Option<u16>, reason: String },
+
+    /// The socket failed while reading; nothing more will arrive.
+    TransportError { message: String },
+
     /// An event type we don't explicitly handle.
     Unknown(serde_json::Value),
 }
@@ -138,89 +148,26 @@ pub struct RealtimeReceiver {
 // ── Client method ──
 
 impl Client {
-    /// Opens a realtime voice session via WebSocket.
+    /// Opens a realtime voice session through the gateway proxy.
     ///
-    /// Returns `(sender, receiver)` for bidirectional communication.
-    /// The connection is made to `{base_url}/qai/v1/realtime` with the
-    /// client's auth token.
+    /// Returns `(sender, receiver)` for bidirectional communication. The
+    /// connection is made to `{base_url}/qai/v1/realtime` with the client's
+    /// credentials, `config.model` rides as the `model` query parameter,
+    /// and a `session.update` frame built from `config` is sent first.
     pub async fn realtime_connect(
         &self,
         config: &RealtimeConfig,
     ) -> Result<(RealtimeSender, RealtimeReceiver)> {
-        // Convert https:// → wss://, http:// → ws://
-        let base = self.base_url();
-        let ws_base = if base.starts_with("https://") {
-            format!("wss://{}", &base[8..])
-        } else if base.starts_with("http://") {
-            format!("ws://{}", &base[7..])
+        let path = if config.model.is_empty() {
+            "/qai/v1/realtime".to_string()
         } else {
-            return Err(Error::Api(ApiError {
-                status_code: 0,
-                code: "invalid_base_url".into(),
-                message: format!("Cannot convert base URL to WebSocket: {base}"),
-                request_id: String::new(),
-            }));
-        };
-
-        let url = format!("{ws_base}/qai/v1/realtime");
-
-        // Extract host from the base URL for the Host header
-        let host = base
-            .trim_start_matches("https://")
-            .trim_start_matches("http://")
-            .trim_end_matches('/')
-            .to_string();
-
-        let auth = self.auth_header().to_str().unwrap_or("").to_string();
-
-        // Extract raw token (strip "Bearer " prefix) for X-API-Key
-        let raw_token = auth.strip_prefix("Bearer ").unwrap_or(&auth);
-
-        let request = Request::builder()
-            .uri(&url)
-            .header("Host", &host)
-            .header("Authorization", &auth)
-            .header("X-API-Key", raw_token)
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Sec-WebSocket-Version", "13")
-            .header(
-                "Sec-WebSocket-Key",
-                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+            format!(
+                "/qai/v1/realtime?model={}",
+                urlencoding::encode(&config.model)
             )
-            .body(())
-            .map_err(|e| {
-                Error::Api(ApiError {
-                    status_code: 0,
-                    code: "websocket_request".into(),
-                    message: format!("Failed to build WebSocket request: {e}"),
-                    request_id: String::new(),
-                })
-            })?;
-
-        // Connect with timeout
-        let (ws_stream, _response) = tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            tokio_tungstenite::connect_async(request),
-        )
-        .await
-        .map_err(|_| {
-            Error::Api(ApiError {
-                status_code: 0,
-                code: "timeout".into(),
-                message: "WebSocket connection timed out (15s)".into(),
-                request_id: String::new(),
-            })
-        })?
-        .map_err(Error::WebSocket)?;
-
-        let (sink, stream) = ws_stream.split();
-        let sender = RealtimeSender {
-            sink: tokio::sync::Mutex::new(sink),
         };
-        let receiver = RealtimeReceiver { stream };
+        let (sender, receiver) = self.connect_gateway_websocket(&path).await?;
 
-        // Send session.update with config
         let session_update = build_session_update(config);
         sender
             .send_raw(&serde_json::to_string(&session_update)?)
@@ -231,25 +178,43 @@ impl Client {
 }
 
 /// Response from the QAI realtime session endpoint.
-#[derive(Debug, Clone, serde::Deserialize)]
+///
+/// Two shapes share this type. An xAI session carries `ephemeral_token`,
+/// `url` and no `provider`; an ElevenLabs session carries `signed_url`
+/// (whose query string is the credential) and `provider = "elevenlabs"`.
+/// [`ws_url`](Self::ws_url) picks whichever is set.
+#[derive(Clone, serde::Deserialize)]
 pub struct RealtimeSession {
-    /// Ephemeral token for direct WebSocket connection (xAI/OpenAI).
+    /// Ephemeral token for a direct xAI WebSocket connection.
     #[serde(default)]
     pub ephemeral_token: String,
-    /// WebSocket URL to connect to.
-    /// For xAI: "wss://api.x.ai/v1/realtime"
-    /// For ElevenLabs: the signed WebSocket URL (includes auth in URL).
+    /// WebSocket URL for an xAI session ("wss://api.x.ai/v1/realtime").
     #[serde(default)]
     pub url: String,
-    /// Signed URL (alias for url — ElevenLabs returns this field name).
+    /// Signed WebSocket URL for an ElevenLabs session; the credential is in
+    /// the URL.
     #[serde(default)]
     pub signed_url: String,
     /// Session ID for billing (pass to realtime/end on disconnect).
     #[serde(default)]
     pub session_id: String,
-    /// Provider name (e.g. "elevenlabs", "xai").
+    /// `"elevenlabs"` for ElevenLabs sessions; empty for xAI.
     #[serde(default)]
     pub provider: String,
+}
+
+/// The token and the signed URL are credentials, so `Debug` masks them.
+impl std::fmt::Debug for RealtimeSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let masked = |v: &str| if v.is_empty() { "" } else { "<redacted>" };
+        f.debug_struct("RealtimeSession")
+            .field("ephemeral_token", &masked(&self.ephemeral_token))
+            .field("url", &self.url)
+            .field("signed_url", &masked(&self.signed_url))
+            .field("session_id", &self.session_id)
+            .field("provider", &self.provider)
+            .finish()
+    }
 }
 
 /// Backwards-compatible alias for [`RealtimeSession`].
@@ -273,8 +238,8 @@ impl Client {
         self.realtime_session_for(None).await
     }
 
-    /// Request an ephemeral token routed to a specific backend
-    /// (e.g. `"openai"`); `None` takes the gateway's default provider.
+    /// Request an ephemeral token for a backend. The gateway recognises
+    /// `"elevenlabs"`; any other value, or `None`, mints an xAI token.
     pub async fn realtime_session_for(&self, provider: Option<&str>) -> Result<RealtimeSession> {
         self.realtime_session_with(provider, serde_json::json!({}))
             .await
@@ -296,7 +261,9 @@ impl Client {
         Ok(session)
     }
 
-    /// End a realtime session and finalize billing.
+    /// End a realtime session and settle its bill. The gateway charges the
+    /// longer of its own clock and `duration_seconds`, less the minute it
+    /// pre-authorised at session start.
     pub async fn realtime_end(&self, session_id: &str, duration_seconds: u64) -> Result<()> {
         let _: (serde_json::Value, _) = self
             .post_json(
@@ -333,7 +300,10 @@ pub async fn realtime_connect_direct(
     realtime_connect_direct_to("wss://api.x.ai/v1/realtime", ephemeral_token, config).await
 }
 
-/// Opens a realtime voice session to a specific WebSocket URL.
+/// Opens a realtime voice session to a specific WebSocket URL, sending
+/// `token` as a bearer and a `session.update` frame built from `config`.
+/// This is the xAI/OpenAI protocol: an ElevenLabs signed URL speaks a
+/// different one and belongs with [`Client::elevenlabs_connect`].
 pub async fn realtime_connect_direct_to(
     url: &str,
     token: &str,
@@ -381,7 +351,7 @@ pub async fn realtime_connect_direct_to(
             request_id: String::new(),
         })
     })?
-    .map_err(Error::WebSocket)?;
+    .map_err(Error::from)?;
 
     let (sink, stream) = ws_stream.split();
     let sender = RealtimeSender {
@@ -400,11 +370,11 @@ pub async fn realtime_connect_direct_to(
 
 // ── Session update builder ──
 
-/// Build the `session.update` JSON payload from config.
-/// Adapts the format based on whether a model is specified (OpenAI uses `model`
-/// at the session level; xAI uses `input_audio_transcription.model`).
+/// Build the `session.update` JSON payload from config. A `gpt-` model gets
+/// the OpenAI frame shape; everything else, including the gateway's
+/// `grok-realtime` defaults, gets xAI's.
 fn build_session_update(config: &RealtimeConfig) -> serde_json::Value {
-    let is_openai = config.model.contains("gpt-") || config.model.contains("realtime");
+    let is_openai = config.model.starts_with("gpt-");
 
     let mut session = serde_json::json!({
         "voice": config.voice,
@@ -440,10 +410,6 @@ fn build_session_update(config: &RealtimeConfig) -> serde_json::Value {
 }
 
 // ── RealtimeSender ──
-
-// SAFETY: WsSink contains a TcpStream which is Send, and we wrap in tokio::sync::Mutex.
-unsafe impl Send for RealtimeSender {}
-unsafe impl Sync for RealtimeSender {}
 
 impl RealtimeSender {
     /// Send a base64-encoded PCM audio chunk.
@@ -523,7 +489,7 @@ impl RealtimeSender {
     /// Close the WebSocket connection gracefully.
     pub async fn close(self) -> Result<()> {
         let mut sink = self.sink.into_inner();
-        sink.close().await.map_err(Error::WebSocket)
+        sink.close().await.map_err(Error::from)
     }
 
     /// Send a raw text frame.
@@ -531,14 +497,16 @@ impl RealtimeSender {
         let mut sink = self.sink.lock().await;
         sink.send(Message::Text(text.into()))
             .await
-            .map_err(Error::WebSocket)
+            .map_err(Error::from)
     }
 }
 
 // ── RealtimeReceiver ──
 
 impl RealtimeReceiver {
-    /// Receive the next event. Returns `None` when the connection closes.
+    /// Receive the next event. A close frame or a read failure is delivered
+    /// as [`RealtimeEvent::Closed`] / [`RealtimeEvent::TransportError`] and
+    /// then `None` on every later call.
     pub async fn recv(&mut self) -> Option<RealtimeEvent> {
         loop {
             let msg = self.stream.next().await?;
@@ -546,10 +514,19 @@ impl RealtimeReceiver {
                 Ok(Message::Text(text)) => {
                     return Some(parse_event(&text));
                 }
-                Ok(Message::Close(_)) => return None,
+                Ok(Message::Close(frame)) => {
+                    return Some(RealtimeEvent::Closed {
+                        code: frame.as_ref().map(|f| u16::from(f.code)),
+                        reason: frame.map(|f| f.reason.to_string()).unwrap_or_default(),
+                    });
+                }
                 Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Frame(_)) => continue,
                 Ok(Message::Binary(_)) => continue,
-                Err(_) => return None,
+                Err(e) => {
+                    return Some(RealtimeEvent::TransportError {
+                        message: e.to_string(),
+                    });
+                }
             }
         }
     }
@@ -618,6 +595,38 @@ fn parse_event(text: &str) -> RealtimeEvent {
     }
 }
 
+/// Maps a failed upgrade onto the crate's error types. The gateway refuses
+/// an upgrade with its usual JSON error body (401 unauthenticated, 402
+/// insufficient balance, 503 not configured), which becomes an
+/// [`Error::Api`] so `status_code` and `typed_code` work on this path too.
+fn handshake_error(e: tokio_tungstenite::tungstenite::Error) -> Error {
+    use tokio_tungstenite::tungstenite::Error as WsError;
+    match e {
+        WsError::Http(resp) => {
+            let status_code = resp.status().as_u16();
+            let body = resp
+                .body()
+                .as_deref()
+                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .unwrap_or_default();
+            let parsed: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+            let field = |k: &str| {
+                parsed
+                    .as_ref()
+                    .and_then(|v| v["error"][k].as_str().or_else(|| v[k].as_str()))
+                    .map(str::to_string)
+            };
+            Error::Api(ApiError {
+                status_code,
+                code: field("code").unwrap_or_else(|| "websocket_upgrade".into()),
+                message: field("message").unwrap_or(body),
+                request_id: String::new(),
+            })
+        }
+        other => Error::from(other),
+    }
+}
+
 // ── ElevenLabs conversational proxy ──
 
 /// Connection parameters for the ElevenLabs conversational-voice proxy.
@@ -627,10 +636,12 @@ fn parse_event(text: &str) -> RealtimeEvent {
 /// absent.
 #[derive(Debug, Clone, Default)]
 pub struct ElevenLabsProxyConfig {
-    /// ElevenLabs voice id to speak with.
+    /// ElevenLabs voice id. Applied when the gateway creates the agent for
+    /// this session; an existing `agent_id` keeps its own voice.
     pub voice_id: Option<String>,
 
-    /// ElevenLabs model id.
+    /// ElevenLabs model id. Applied when the gateway creates the agent for
+    /// this session, like `voice_id`.
     pub model: Option<String>,
 
     /// An existing conversational agent to connect to. Omit to have the
@@ -748,7 +759,7 @@ impl Client {
                 request_id: String::new(),
             })
         })?
-        .map_err(Error::WebSocket)?;
+        .map_err(handshake_error)?;
 
         let (sink, stream) = ws_stream.split();
         Ok((
@@ -817,6 +828,32 @@ mod tests {
         assert_eq!(json["voice"], "Eve");
         assert_eq!(json["sample_rate"], 16000);
         assert_eq!(json["tools"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn grok_models_get_the_xai_frame() {
+        let mut config = RealtimeConfig {
+            model: "grok-realtime-beta".into(),
+            ..RealtimeConfig::default()
+        };
+        let frame = build_session_update(&config);
+        assert!(frame["session"]["audio"].is_object());
+        assert!(frame["session"].get("modalities").is_none());
+
+        config.model = "gpt-4o-realtime-preview".into();
+        let frame = build_session_update(&config);
+        assert_eq!(frame["session"]["input_audio_format"], "pcm16");
+    }
+
+    #[test]
+    fn session_debug_masks_credentials() {
+        let session: RealtimeSession = serde_json::from_str(
+            r#"{"ephemeral_token":"sk-secret","url":"wss://api.x.ai/v1/realtime","session_id":"vs_1"}"#,
+        )
+        .unwrap();
+        let text = format!("{session:?}");
+        assert!(!text.contains("sk-secret"));
+        assert!(text.contains("vs_1"));
     }
 
     #[test]

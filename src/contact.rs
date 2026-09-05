@@ -1,5 +1,5 @@
 use reqwest::header::CONTENT_TYPE;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::client::Client;
 use crate::error::Result;
@@ -22,22 +22,13 @@ pub struct ContactRequest {
     pub message: String,
 }
 
-/// Response from the contact form endpoint.
-#[derive(Debug, Clone, Deserialize)]
-pub struct ContactResponse {
-    /// Status message (e.g. "ok", "sent").
-    pub status: String,
-
-    /// Optional detail message.
-    #[serde(default)]
-    pub message: Option<String>,
-}
-
 impl Client {
     /// Sends a contact form message.
     ///
-    /// This endpoint does not require authentication. A separate HTTP client
-    /// is used to avoid sending API key headers.
+    /// The route is unauthenticated, so the request goes out on a bare HTTP
+    /// client with no credential headers. Validation failures arrive as
+    /// typed [`ApiError`](crate::ApiError)s (`invalid_email`,
+    /// `field_too_long`, `missing_fields`).
     pub async fn contact(&self, req: &ContactRequest) -> Result<StatusResponse> {
         let url = format!("{}/qai/v1/contact", self.base_url());
 
@@ -50,14 +41,7 @@ impl Client {
             .await?;
 
         if !resp.status().is_success() {
-            let status_code = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(crate::error::Error::Api(crate::error::ApiError {
-                status_code,
-                code: "contact_error".to_string(),
-                message: body,
-                request_id: String::new(),
-            }));
+            return Err(crate::client::parse_api_error(resp, "").await);
         }
 
         let result: StatusResponse = resp.json().await?;
