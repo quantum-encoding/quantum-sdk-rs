@@ -722,10 +722,21 @@ pub(crate) async fn parse_api_error(resp: reqwest::Response, request_id: &str) -
     parse_api_error_from_text(status, &body, request_id)
 }
 
+/// The flat error envelope: `error` is the code itself.
+#[derive(serde::Deserialize)]
+struct FlatApiErrorBody {
+    error: String,
+    #[serde(default)]
+    message: String,
+}
+
 fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id: &str) -> Error {
     let status_code = status.as_u16();
     let status_text = status.canonical_reason().unwrap_or("Unknown").to_string();
 
+    // Two envelopes exist: the usual `{"error": {message, type, code}}` and
+    // the flat `{"error": "<code>", "message": "…"}` a few routes
+    // (/qai/v1/agent among them) write.
     let (code, message) = if let Ok(err_body) = serde_json::from_str::<ApiErrorBody>(body) {
         let msg = if err_body.error.message.is_empty() {
             body.to_string()
@@ -738,6 +749,18 @@ fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id
             err_body.error.error_type
         } else {
             status_text
+        };
+        (c, msg)
+    } else if let Ok(flat) = serde_json::from_str::<FlatApiErrorBody>(body) {
+        let msg = if flat.message.is_empty() {
+            body.to_string()
+        } else {
+            flat.message
+        };
+        let c = if flat.error.is_empty() {
+            status_text
+        } else {
+            flat.error
         };
         (c, msg)
     } else {
@@ -754,6 +777,22 @@ fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flat_error_envelope_yields_its_code() {
+        let err = parse_api_error_from_text(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error":"invalid_request","message":"model is required"}"#,
+            "req_1",
+        );
+        match err {
+            Error::Api(e) => {
+                assert_eq!(e.code, "invalid_request");
+                assert_eq!(e.message, "model is required");
+                assert_eq!(e.status_code, 400);
+            }
+            other => panic!("expected Api error, got {other:?}"),
+        }
+    }
     use super::*;
 
     use std::io::{Read, Write};
