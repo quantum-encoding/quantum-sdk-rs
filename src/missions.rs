@@ -80,10 +80,13 @@ pub struct MissionChatRequest {
     pub stream: Option<bool>,
 }
 
-/// Request body for updating a mission plan.
+/// Request body for updating a mission plan. Only a pending, paused, or
+/// running mission accepts it (409 `invalid_state` otherwise).
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MissionPlanUpdate {
-    /// Updated task list.
+    /// Tasks to write or overwrite, in order. Each takes its id from an `id`
+    /// key or its position (`task_001`, …); a missing `status` becomes
+    /// `pending`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tasks: Option<Vec<HashMap<String, serde_json::Value>>>,
 
@@ -91,15 +94,12 @@ pub struct MissionPlanUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workers: Option<HashMap<String, MissionWorkerConfig>>,
 
-    /// Additional system prompt.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<String>,
-
-    /// Updated max steps.
+    /// Updated max steps. Values at or below zero are ignored.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_steps: Option<i32>,
 
-    /// Additional context to inject.
+    /// Additional context, appended to the mission's session as a user turn
+    /// prefixed `[Plan Update]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
 }
@@ -410,6 +410,30 @@ pub struct MissionStatusResponse {
     pub commit_sha: Option<String>,
 }
 
+/// Response from `POST /qai/v1/missions/{id}/retry/{task_id}`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MissionRetryResponse {
+    /// The mission.
+    #[serde(default)]
+    pub mission_id: String,
+
+    /// The task that was retried.
+    #[serde(default)]
+    pub task_id: String,
+
+    /// `"task_completed"`.
+    #[serde(default)]
+    pub status: String,
+
+    /// The retried task's output.
+    #[serde(default)]
+    pub result: String,
+
+    /// Model the retry ran on.
+    #[serde(default)]
+    pub model: String,
+}
+
 // ---------------------------------------------------------------------------
 // Client methods
 // ---------------------------------------------------------------------------
@@ -427,7 +451,7 @@ impl Client {
     /// List missions for the authenticated user.
     pub async fn mission_list(&self, status: Option<&str>) -> Result<MissionListResponse> {
         let path = match status {
-            Some(s) => format!("/qai/v1/missions/list?status={}", s),
+            Some(s) => format!("/qai/v1/missions/list?status={}", urlencoding::encode(s)),
             None => "/qai/v1/missions/list".into(),
         };
         let (resp, _) = self.get_json(&path).await?;
@@ -450,7 +474,13 @@ impl Client {
         Ok(resp)
     }
 
-    /// Cancel a running mission.
+    /// Cancel a pending or running mission (409 `invalid_state` otherwise).
+    ///
+    /// Cancelling a running mission charges for the work already done,
+    /// estimated at $0.02 per elapsed minute since it started with a
+    /// half-minute minimum. A pending mission is cancelled free.
+    ///
+    /// `POST /qai/v1/missions/{id}/cancel`
     pub async fn mission_cancel(&self, mission_id: &str) -> Result<MissionStatusResponse> {
         let (resp, _) = self
             .post_json_empty(&format!("/qai/v1/missions/{}/cancel", mission_id))
@@ -487,11 +517,17 @@ impl Client {
     }
 
     /// Retry a failed task.
+    ///
+    /// The retry runs as one generation on the task's model, billed at that
+    /// model's rate, and the reply carries the new output and the model
+    /// used.
+    ///
+    /// `POST /qai/v1/missions/{id}/retry/{task_id}`
     pub async fn mission_retry_task(
         &self,
         mission_id: &str,
         task_id: &str,
-    ) -> Result<MissionStatusResponse> {
+    ) -> Result<MissionRetryResponse> {
         let (resp, _) = self
             .post_json_empty(&format!(
                 "/qai/v1/missions/{}/retry/{}",
@@ -558,5 +594,48 @@ impl Client {
     ) -> Result<MissionCreateResponse> {
         let (resp, _) = self.post_json("/qai/v1/missions/import", req).await?;
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_update_sends_only_the_fields_the_route_applies() {
+        let mut task = HashMap::new();
+        task.insert("name".to_string(), serde_json::json!("write tests"));
+        let req = MissionPlanUpdate {
+            tasks: Some(vec![task]),
+            max_steps: Some(30),
+            context: Some("prefer tokio".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(json["tasks"][0]["name"], "write tests");
+        assert_eq!(json["max_steps"], 30);
+        assert_eq!(json["context"], "prefer tokio");
+        assert!(json.get("workers").is_none());
+        assert!(json.get("system_prompt").is_none());
+    }
+
+    #[test]
+    fn retry_response_decodes_the_handler_shape() {
+        let resp: MissionRetryResponse = serde_json::from_str(
+            r#"{"mission_id":"m1","task_id":"task_002","status":"task_completed",
+                "result":"fn main() {}","model":"claude-sonnet-4-6"}"#,
+        )
+        .expect("decode");
+        assert_eq!(resp.task_id, "task_002");
+        assert_eq!(resp.result, "fn main() {}");
+        assert_eq!(resp.model, "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn status_response_decodes_the_cancel_shape() {
+        let resp: MissionStatusResponse =
+            serde_json::from_str(r#"{"mission_id":"m1","status":"cancelled"}"#).expect("decode");
+        assert_eq!(resp.status.as_deref(), Some("cancelled"));
+        assert!(resp.updated.is_none());
     }
 }

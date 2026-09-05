@@ -22,7 +22,9 @@ pub struct RagSearchRequest {
 /// Response from RAG search.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RagSearchResponse {
-    /// Matching document chunks.
+    /// Matching document chunks, best score first. Empty (sent as `null`)
+    /// when no corpus returned a chunk.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
     pub results: Vec<RagResult>,
 
     /// Original search query.
@@ -100,7 +102,9 @@ pub struct SurrealRagSearchRequest {
 /// Response from SurrealDB RAG search.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurrealRagSearchResponse {
-    /// Matching documentation chunks.
+    /// Matching documentation chunks, best score first. Empty (sent as
+    /// `null`) when nothing matched.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
     pub results: Vec<SurrealRagResult>,
 
     /// Original search query.
@@ -120,44 +124,56 @@ pub struct SurrealRagSearchResponse {
 }
 
 /// A single result from SurrealDB RAG search.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SurrealRagResult {
     /// Documentation provider.
+    #[serde(default)]
     pub provider: String,
 
-    /// Document title.
+    /// Document title. The gateway's query does not select it, so it is
+    /// empty in practice.
+    #[serde(default)]
     pub title: String,
 
-    /// Section heading.
+    /// Section heading. The gateway's query does not select it, so it is
+    /// empty in practice.
+    #[serde(default)]
     pub heading: String,
 
     /// Original source file path.
+    #[serde(default)]
     pub source_file: String,
 
     /// Matching text chunk.
+    #[serde(default)]
     pub content: String,
 
     /// Cosine similarity score.
+    #[serde(default)]
     pub score: f64,
 }
 
 /// A SurrealDB RAG provider.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SurrealRagProviderInfo {
     /// Provider identifier (e.g. "xai", "claude").
+    #[serde(default)]
     pub provider: String,
 
     /// Number of document chunks for this provider.
     #[serde(default)]
-    pub chunk_count: Option<i64>,
+    pub chunks: i64,
 }
 
 /// Backwards-compatible alias.
 pub type SurrealRagProvider = SurrealRagProviderInfo;
 
 /// Response from listing SurrealDB RAG providers.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SurrealRagProvidersResponse {
+    /// Providers with at least one chunk, most chunks first. Empty (sent as
+    /// `null`) when the table is empty.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
     pub providers: Vec<SurrealRagProviderInfo>,
     #[serde(default)]
     pub request_id: Option<String>,
@@ -212,7 +228,8 @@ pub struct CreateCollectionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Backend to create it on. Defaults to `"xai"`.
+    /// Label stored on the collection record. It does not choose a backend:
+    /// every collection is created on xAI regardless of the value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
 }
@@ -236,11 +253,13 @@ pub struct CollectionDocument {
     #[serde(default)]
     pub filename: String,
 
-    /// Indexing status (`pending`, `indexed`, `failed`).
+    /// Indexing status. The upload route records `indexed` as soon as the
+    /// provider accepts the file; no other value is written today.
     #[serde(default)]
     pub status: String,
 
-    /// Number of chunks the document was split into.
+    /// Number of chunks the document was split into. The upload route never
+    /// sets it, so it is zero in practice.
     #[serde(default)]
     pub chunks: i64,
 
@@ -530,6 +549,72 @@ impl Client {
             )
             .await?;
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn vertex_search_decodes_a_null_result_list() {
+        let resp: RagSearchResponse = serde_json::from_str(
+            r#"{"results":null,"query":"billing","corpora":["docs"],"cost_ticks":0,
+                "request_id":"req_1"}"#,
+        )
+        .expect("decode");
+        assert!(resp.results.is_empty());
+        assert_eq!(resp.corpora.as_deref().map(<[String]>::len), Some(1));
+    }
+
+    #[test]
+    fn vertex_search_decodes_the_handler_result_shape() {
+        let resp: RagSearchResponse = serde_json::from_str(
+            r#"{"results":[{"source_uri":"gs://b/f.md","source_name":"f.md","text":"ticks",
+                            "score":0.8,"distance":0.2}],
+                "query":"billing","corpora":null,"cost_ticks":5,"request_id":"req_1"}"#,
+        )
+        .expect("decode");
+        assert_eq!(resp.results[0].source_name, "f.md");
+        assert!(resp.corpora.is_none());
+    }
+
+    #[test]
+    fn surreal_search_decodes_a_null_result_list() {
+        let resp: SurrealRagSearchResponse = serde_json::from_str(
+            r#"{"results":null,"query":"q","cost_ticks":0,"request_id":"req_2"}"#,
+        )
+        .expect("decode");
+        assert!(resp.results.is_empty());
+        assert!(resp.provider.is_none());
+    }
+
+    #[test]
+    fn surreal_search_decodes_rows_without_title_or_heading() {
+        let resp: SurrealRagSearchResponse = serde_json::from_str(
+            r#"{"results":[{"provider":"xai","source_file":"chat.md","content":"stream=true",
+                            "score":0.91}],
+                "query":"streaming","provider":"xai","cost_ticks":3,"request_id":"req_3"}"#,
+        )
+        .expect("decode");
+        let hit = &resp.results[0];
+        assert_eq!(hit.provider, "xai");
+        assert!(hit.title.is_empty());
+        assert!(hit.heading.is_empty());
+        assert_eq!(hit.content, "stream=true");
+    }
+
+    #[test]
+    fn surreal_providers_read_the_chunks_key_and_a_null_list() {
+        let resp: SurrealRagProvidersResponse = serde_json::from_str(
+            r#"{"providers":[{"provider":"xai","chunks":412}],"request_id":"req_4"}"#,
+        )
+        .expect("decode");
+        assert_eq!(resp.providers[0].chunks, 412);
+
+        let empty: SurrealRagProvidersResponse =
+            serde_json::from_str(r#"{"providers":null,"request_id":"req_5"}"#).expect("decode");
+        assert!(empty.providers.is_empty());
     }
 }
 

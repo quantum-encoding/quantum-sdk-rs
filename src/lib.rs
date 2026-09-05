@@ -90,8 +90,9 @@ pub use session::{
 
 // Agent types
 pub use agent::{
-    AgentEvent, AgentRequest, AgentStream, AgentStreamEvent, AgentWorker, AgentWorkerConfig,
-    MissionEvent, MissionRequest, MissionWorker, MissionWorkerConfig,
+    AgentContentPart, AgentEvent, AgentMessage, AgentRequest, AgentResponse, AgentStream,
+    AgentStreamEvent, AgentToolDef, AgentToolUse, AgentUsage, MissionEvent, MissionRequest,
+    MissionWorker, MissionWorkerConfig,
 };
 
 // Image types
@@ -181,8 +182,7 @@ pub use region::Region;
 
 // Compute types
 pub use compute::{
-    BillingEntry, BillingRequest, BillingResponse, ComputeInstance, ComputeInstanceInfo,
-    ComputeTemplate, DeleteResponse, InstanceResponse, InstancesResponse, ProvisionRequest,
+    ComputeInstanceInfo, ComputeTemplate, DeleteResponse, InstancesResponse, ProvisionRequest,
     ProvisionResponse, SSHKeyRequest, TemplatesResponse,
 };
 
@@ -194,8 +194,8 @@ pub use voices::{
 
 // 3D Mesh pipeline types
 pub use mesh::{
-    AnimateRequest, AnimationPostProcess, BasicAnimations, Generate3DRequest, ModelUrls,
-    PostProcess, RemeshRequest, RetextureRequest, RigRequest,
+    AnimateRequest, AnimationPostProcess, BasicAnimations, ModelUrls, PostProcess, RemeshRequest,
+    RetextureRequest, RigOutput, RigRequest,
 };
 
 // Contact types
@@ -254,7 +254,7 @@ pub use missions::{
     MissionApproveRequest, MissionChatRequest, MissionChatResponse, MissionCheckpoint,
     MissionCheckpointsResponse, MissionConfirmStructure, MissionCreateRequest,
     MissionCreateResponse, MissionDetail, MissionImportRequest, MissionListResponse,
-    MissionPlanUpdate, MissionStatusResponse, MissionTask,
+    MissionPlanUpdate, MissionRetryResponse, MissionStatusResponse, MissionTask,
 };
 
 // Security types
@@ -293,7 +293,7 @@ pub use scanner::{
 
 // Agent-runtime types
 pub use agent_runtime::{
-    AppendEventRequest, OverlayConfig, RuntimeAgent, RuntimeAgentRequest,
+    AppendEventRequest, OverlayConfig, RuntimeAgent, RuntimeAgentRequest, RuntimeAgentUpdate,
     RuntimeAgentUpdateResponse, RuntimeAgentsResponse, RuntimeEnvironment,
     RuntimeEnvironmentRequest, RuntimeEnvironmentsResponse, RuntimeEvent, RuntimeEventStream,
     RuntimeOkResponse, RuntimeSession, RuntimeTool, StageWorkspaceResponse, StartSessionRequest,

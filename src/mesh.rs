@@ -1,8 +1,9 @@
-//! 3D model pipeline via Meshy: generate → remesh → retexture → rig → animate.
+//! 3D model pipeline via Meshy: remesh → retexture → rig → animate.
 //!
 //! All operations run through the async job system. Each method submits a job
 //! and polls until completion. Use the typed request structs or call
-//! [`Client::create_job`] directly with the appropriate `job_type`.
+//! [`Client::create_job`] directly with the appropriate `job_type`. Text- and
+//! image-to-3D generation is [`Client::generate_3d`] in the jobs module.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +34,8 @@ pub struct RemeshRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topology: Option<String>,
 
-    /// Target polygon count (100–300,000). Default: 30000.
+    /// Target polygon count (100–300,000). Omitted when unset; Meshy applies
+    /// its own default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_polycount: Option<i32>,
 
@@ -68,6 +70,9 @@ pub struct ModelUrls {
 }
 
 /// Request for AI retexturing of an existing 3D model.
+///
+/// One of `text_style_prompt` and `image_style_url` is required; the job
+/// fails otherwise.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RetextureRequest {
     /// ID of a completed 3D task to retexture.
@@ -79,15 +84,33 @@ pub struct RetextureRequest {
     pub model_url: Option<String>,
 
     /// Text prompt describing the desired texture.
-    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_style_prompt: Option<String>,
+
+    /// URL of a reference image whose style the texture follows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_style_url: Option<String>,
+
+    /// Meshy AI model to use. Omitted when unset; Meshy applies its own
+    /// default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_model: Option<String>,
+
+    /// Keep the model's existing UV layout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_original_uv: Option<bool>,
 
     /// Enable PBR texture maps (metallic, roughness, normal).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_pbr: Option<bool>,
 
-    /// Meshy AI model to use (default: "meshy-6").
+    /// Strip baked lighting from the generated texture.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ai_model: Option<String>,
+    pub remove_lighting: Option<bool>,
+
+    /// Output formats: "glb", "fbx", "obj", "usdz", "stl", "blend".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_formats: Option<Vec<String>>,
 }
 
 /// Request for auto-rigging a humanoid 3D model.
@@ -104,6 +127,10 @@ pub struct RigRequest {
     /// Height of the character in meters (for skeleton scaling).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height_meters: Option<f64>,
+
+    /// URL of a texture image to apply to the rigged character.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub texture_image_url: Option<String>,
 }
 
 /// Request for applying an animation to a rigged character.
@@ -133,36 +160,66 @@ pub struct AnimationPostProcess {
 /// Backwards-compatible alias for [`AnimationPostProcess`].
 pub type PostProcess = AnimationPostProcess;
 
-/// Request for 3D model generation (alias for [`crate::image::ImageRequest`]
-/// which includes Meshy 3D fields like topology, target_polycount, etc.).
-pub type Generate3DRequest = crate::image::ImageRequest;
-
-/// URLs for basic pre-built animations from a rigging result.
+/// URLs for the walk and run cycles Meshy bakes into every rigging result.
+/// There are no idle animations; use [`Client::animate`] for anything else.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct BasicAnimations {
     /// Walking animation in GLB format.
     #[serde(default)]
-    pub walking_glb: String,
+    pub walking_glb_url: String,
 
     /// Walking animation in FBX format.
     #[serde(default)]
-    pub walking_fbx: String,
+    pub walking_fbx_url: String,
+
+    /// Walking animation as an armature-only GLB.
+    #[serde(default)]
+    pub walking_armature_glb_url: String,
 
     /// Running animation in GLB format.
     #[serde(default)]
-    pub running_glb: String,
+    pub running_glb_url: String,
 
     /// Running animation in FBX format.
     #[serde(default)]
-    pub running_fbx: String,
+    pub running_fbx_url: String,
 
-    /// Idle animation in GLB format.
+    /// Running animation as an armature-only GLB.
     #[serde(default)]
-    pub idle_glb: String,
+    pub running_armature_glb_url: String,
+}
 
-    /// Idle animation in FBX format.
+/// The rigging output of a completed job. The job's `result` is an envelope
+/// (`result`, `task_id`, `cost_ticks`, `request_id`); this is its `result`
+/// member.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RigOutput {
+    /// The rigged character in FBX format.
     #[serde(default)]
-    pub idle_fbx: String,
+    pub rigged_character_fbx_url: String,
+
+    /// The rigged character in GLB format.
+    #[serde(default)]
+    pub rigged_character_glb_url: String,
+
+    /// Walk and run cycles, when Meshy produced them.
+    #[serde(default)]
+    pub basic_animations: Option<BasicAnimations>,
+}
+
+impl RigOutput {
+    /// Decodes the rigging output from a finished job. `None` when the job
+    /// carries no `result` (it failed or is still running).
+    pub fn from_job(job: &JobStatusResponse) -> Result<Option<RigOutput>> {
+        match job
+            .result
+            .as_ref()
+            .and_then(|envelope| envelope.get("result"))
+        {
+            Some(output) if !output.is_null() => Ok(Some(serde_json::from_value(output.clone())?)),
+            _ => Ok(None),
+        }
+    }
 }
 
 // ── Convenience methods ──
@@ -185,7 +242,8 @@ impl Client {
 
     /// Submit a rigging job — add a humanoid skeleton to a 3D model.
     ///
-    /// Returns the job result containing rigged FBX/GLB URLs and basic animations.
+    /// The job's `result` is a [`RigOutput`]: rigged FBX/GLB URLs and the
+    /// basic walk/run animations. Decode it with [`RigOutput::from_job`].
     pub async fn rig(&self, req: &RigRequest) -> Result<JobStatusResponse> {
         self.submit_and_poll("3d/rig", req).await
     }
@@ -218,5 +276,59 @@ impl Client {
             120, // 10 minutes max
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retexture_sends_the_style_keys_meshy_reads() {
+        let req = RetextureRequest {
+            input_task_id: Some("task_1".into()),
+            text_style_prompt: Some("weathered bronze".into()),
+            enable_pbr: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(json["input_task_id"], "task_1");
+        assert_eq!(json["text_style_prompt"], "weathered bronze");
+        assert_eq!(json["enable_pbr"], true);
+        assert!(json.get("prompt").is_none());
+        assert!(json.get("image_style_url").is_none());
+    }
+
+    #[test]
+    fn rig_output_decodes_from_the_job_result() {
+        let job: JobStatusResponse = serde_json::from_str(
+            r#"{"job_id":"j1","status":"completed","type":"3d/rig",
+                "result":{"result":{"rigged_character_fbx_url":"https://x/rig.fbx",
+                                     "rigged_character_glb_url":"https://x/rig.glb",
+                                     "basic_animations":{"walking_glb_url":"https://x/walk.glb",
+                                                         "walking_fbx_url":"https://x/walk.fbx",
+                                                         "walking_armature_glb_url":"https://x/walk-arm.glb",
+                                                         "running_glb_url":"https://x/run.glb",
+                                                         "running_fbx_url":"https://x/run.fbx",
+                                                         "running_armature_glb_url":"https://x/run-arm.glb"}},
+                          "task_id":"m1","cost_ticks":10,"request_id":"r1"},
+                "cost_ticks":10}"#,
+        )
+        .expect("decode job");
+        let output = RigOutput::from_job(&job)
+            .expect("decode rig output")
+            .expect("present");
+        assert_eq!(output.rigged_character_glb_url, "https://x/rig.glb");
+        let anims = output.basic_animations.expect("animations");
+        assert_eq!(anims.walking_glb_url, "https://x/walk.glb");
+        assert_eq!(anims.running_armature_glb_url, "https://x/run-arm.glb");
+    }
+
+    #[test]
+    fn rig_output_from_job_is_none_without_a_result() {
+        let job: JobStatusResponse =
+            serde_json::from_str(r#"{"job_id":"j1","status":"failed","error":"x"}"#)
+                .expect("decode job");
+        assert!(RigOutput::from_job(&job).expect("ok").is_none());
     }
 }

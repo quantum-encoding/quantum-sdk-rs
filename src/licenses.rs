@@ -127,7 +127,9 @@ pub struct LicensePublicKeyResponse {
 
 impl Client {
     /// Lists the caller's licences, each active one carrying a freshly signed
-    /// JWT.
+    /// JWT. An active licence whose re-signing fails is left out of the list
+    /// entirely rather than returned without a key; it reappears on a later
+    /// call once signing succeeds.
     ///
     /// Pass `app` to filter to a single app, or `None` for all apps.
     ///

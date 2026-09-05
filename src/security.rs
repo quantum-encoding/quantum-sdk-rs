@@ -33,8 +33,8 @@ pub struct SecurityScanHtmlRequest {
 /// Request body for `POST /qai/v1/security/scan-code`.
 ///
 /// Two modes: set `code` (with `filename` so the language can be detected) to
-/// scan one file, or set `url` to clone a GitHub repository and scan a tree.
-/// One of the two is required.
+/// scan one file, or set `url` to clone a git repository over HTTPS and scan a
+/// tree. One of the two is required.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SecurityScanCodeRequest {
     /// Source of the single file to scan.
@@ -49,7 +49,8 @@ pub struct SecurityScanCodeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
-    /// GitHub repository URL to clone and scan instead of `code`.
+    /// Git repository URL to clone (shallow) and scan instead of `code`. Any
+    /// `https://` URL is accepted; only the scheme is checked.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 
@@ -400,13 +401,23 @@ impl Client {
         Ok(resp)
     }
 
-    /// Get the injection blocklist feed.
+    /// Get the injection blocklist feed. Admin-only: every other caller gets
+    /// 403 `forbidden`.
+    ///
+    /// `status` is `confirmed` (the default), `suspected`, or `all`. At most
+    /// 100 entries come back, highest threat score first, with each entry's
+    /// payload sample stripped.
+    ///
+    /// `GET /qai/v1/security/blocklist`
     pub async fn security_blocklist(
         &self,
         status: Option<&str>,
     ) -> Result<SecurityBlocklistResponse> {
         let path = match status {
-            Some(s) => format!("/qai/v1/security/blocklist?status={}", s),
+            Some(s) => format!(
+                "/qai/v1/security/blocklist?status={}",
+                urlencoding::encode(s)
+            ),
             None => "/qai/v1/security/blocklist".into(),
         };
         let (resp, _) = self.get_json(&path).await?;

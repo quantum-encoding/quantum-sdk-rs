@@ -5,18 +5,20 @@
 //! gateway's metered container, `managed-agents` projects onto Anthropic's
 //! hosted runtime and is admin-only. Starting a session returns a
 //! [`RuntimeSession`] descriptor which the client then holds and passes back on
-//! every session call — the event, stream, stop, and workspace routes are
-//! stateless with respect to the server.
+//! every session call. The event, stream, stop, and workspace routes read the
+//! descriptor rather than a server-side session record, but the server still
+//! resolves the session's owner from its own store by `upstream_id`: a
+//! descriptor it does not hold, or one belonging to someone else, is refused
+//! with 403 `not your session`.
 //!
 //! Agent and environment records are free to create and edit; spend starts at
 //! session start.
 
 use futures_util::{Stream, StreamExt};
-use reqwest::header::{AUTHORIZATION, HeaderValue};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::sse_data_payloads;
-use crate::client::Client;
+use crate::client::{Client, parse_api_error};
 use crate::error::{ApiError, Error, Result};
 use crate::serde_util::null_as_default;
 
@@ -35,9 +37,12 @@ pub struct RuntimeTool {
     pub name: String,
 }
 
-/// Request body for creating or updating a runtime agent.
+/// Request body for creating a runtime agent.
 ///
-/// On update, an omitted `name` or `model` carries the stored value forward.
+/// The update route reads the same body but carries only `name` and `model`
+/// forward when they are empty: an omitted `system_prompt` or `tools` is
+/// written as empty. [`Client::agent_runtime_agent_update`] therefore takes a
+/// [`RuntimeAgentUpdate`] and merges it onto the stored agent before sending.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct RuntimeAgentRequest {
     /// Display name for the agent.
@@ -53,6 +58,38 @@ pub struct RuntimeAgentRequest {
     /// Tools the agent may call.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<RuntimeTool>>,
+}
+
+/// The fields to change on a runtime agent. `None` keeps the stored value.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeAgentUpdate {
+    /// New display name.
+    pub name: Option<String>,
+
+    /// New model.
+    pub model: Option<String>,
+
+    /// New system prompt. `Some(String::new())` clears it.
+    pub system_prompt: Option<String>,
+
+    /// New tool list. `Some(vec![])` clears it.
+    pub tools: Option<Vec<RuntimeTool>>,
+}
+
+impl RuntimeAgentUpdate {
+    /// Merges the update onto a stored agent, producing the full body the
+    /// update route writes.
+    pub fn apply_to(&self, current: &RuntimeAgent) -> RuntimeAgentRequest {
+        RuntimeAgentRequest {
+            name: self.name.clone().unwrap_or_else(|| current.name.clone()),
+            model: self.model.clone().unwrap_or_else(|| current.model.clone()),
+            system_prompt: self
+                .system_prompt
+                .clone()
+                .unwrap_or_else(|| current.system_prompt.clone()),
+            tools: Some(self.tools.clone().unwrap_or_else(|| current.tools.clone())),
+        }
+    }
 }
 
 /// A stored runtime agent.
@@ -125,7 +162,9 @@ pub struct RuntimeAgentUpdateResponse {
 
 /// The git contract a `coding-session` environment runs under: which repo to
 /// check out at which ref, the path the agent may write, and how its diff is
-/// published. Exactly one of `core_repo` and `workspace_object` is required.
+/// published. A session needs one of `core_repo` and `workspace_object`; the
+/// environment route only checks that an overlay is present, so the mismatch
+/// surfaces at session start rather than at creation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OverlayConfig {
     /// Repository to check out.
@@ -186,7 +225,8 @@ pub struct RuntimeEnvironmentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vault_ids: Option<Vec<String>>,
 
-    /// The coding-session git contract. Omit for managed-agents environments.
+    /// The coding-session git contract. Required for that backend; omit for
+    /// managed-agents environments.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overlay: Option<OverlayConfig>,
 }
@@ -298,6 +338,12 @@ pub struct RuntimeSession {
 
 /// One item appended to, or emitted from, a session. Type names follow the
 /// Managed Agents event vocabulary so both backends stream the same shape.
+///
+/// [`RuntimeEventStream`] synthesises two types of its own: `unknown` for a
+/// `data:` payload that is not a JSON object, carrying the raw payload in
+/// [`content`](Self::content), and `error` with a `transport: …` content when
+/// the connection fails mid-stream (the gateway also writes an `error` event
+/// of its own when the upstream stream fails; both end the stream).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeEvent {
     /// Event type (e.g. a user message, a model delta, a tool use/result, a
@@ -378,6 +424,26 @@ impl Stream for RuntimeEventStream {
     }
 }
 
+/// Turns one SSE payload (or the transport error that ended the body) into
+/// the event the stream yields.
+fn runtime_event_from_payload(payload: crate::agent::SseLine) -> RuntimeEvent {
+    match payload {
+        Ok(payload) => match serde_json::from_str::<RuntimeEvent>(&payload) {
+            Ok(event) => event,
+            Err(_) => RuntimeEvent {
+                r#type: "unknown".into(),
+                content: payload,
+                ..Default::default()
+            },
+        },
+        Err(err) => RuntimeEvent {
+            r#type: "error".into(),
+            content: format!("transport: {err}"),
+            ..Default::default()
+        },
+    }
+}
+
 impl Client {
     // ── Agents ──────────────────────────────────────────────────────────────
 
@@ -394,7 +460,10 @@ impl Client {
         Ok(resp)
     }
 
-    /// Lists the caller's runtime agents. `limit` caps the page size.
+    /// Lists the caller's runtime agents.
+    ///
+    /// `limit` caps the page size when it is 1..=500; any other value,
+    /// larger ones included, silently becomes the server default of 50.
     ///
     /// `GET /qai/v1/agent-runtime/agents`
     pub async fn agent_runtime_agents(&self, limit: Option<u32>) -> Result<RuntimeAgentsResponse> {
@@ -418,16 +487,24 @@ impl Client {
 
     /// Updates a runtime agent's config and returns the new version.
     ///
-    /// `PUT /qai/v1/agent-runtime/agents/{id}`
+    /// The gateway's update route writes every field, so this reads the
+    /// stored agent first, merges `update` onto it with
+    /// [`RuntimeAgentUpdate::apply_to`], and sends the whole body. The two
+    /// calls are not atomic: a concurrent update landing between them is
+    /// overwritten.
+    ///
+    /// `GET` then `PUT /qai/v1/agent-runtime/agents/{id}`
     pub async fn agent_runtime_agent_update(
         &self,
         id: &str,
-        req: &RuntimeAgentRequest,
+        update: &RuntimeAgentUpdate,
     ) -> Result<RuntimeAgentUpdateResponse> {
+        let current = self.agent_runtime_agent_get(id).await?;
+        let req = update.apply_to(&current);
         let (resp, _meta) = self
             .put_json::<RuntimeAgentRequest, RuntimeAgentUpdateResponse>(
                 &format!("/qai/v1/agent-runtime/agents/{id}"),
-                req,
+                &req,
             )
             .await?;
         Ok(resp)
@@ -459,7 +536,10 @@ impl Client {
         Ok(resp)
     }
 
-    /// Lists the caller's runtime environments. `limit` caps the page size.
+    /// Lists the caller's runtime environments.
+    ///
+    /// `limit` caps the page size when it is 1..=500; any other value,
+    /// larger ones included, silently becomes the server default of 50.
     ///
     /// `GET /qai/v1/agent-runtime/environments`
     pub async fn agent_runtime_environments(
@@ -529,6 +609,10 @@ impl Client {
     /// structural event seen — to replay the durable events past it before
     /// bridging to the live stream; ephemeral events are not replayed.
     ///
+    /// Nothing is dropped: a payload that is not a JSON object arrives as an
+    /// `unknown` event carrying the raw text, and a transport failure as a
+    /// final `error` event (see [`RuntimeEvent`]).
+    ///
     /// `GET /qai/v1/agent-runtime/sessions/stream`
     pub async fn agent_runtime_session_stream(
         &self,
@@ -544,10 +628,7 @@ impl Client {
             path.push_str(&format!("&since={since}"));
         }
         let (resp, _meta) = self.get_stream_raw(&path).await?;
-        let payloads = sse_data_payloads(resp.bytes_stream());
-        let events = payloads.filter_map(|payload| async move {
-            serde_json::from_str::<RuntimeEvent>(&payload).ok()
-        });
+        let events = sse_data_payloads(resp.bytes_stream()).map(runtime_event_from_payload);
         Ok(RuntimeEventStream {
             inner: Box::pin(events),
         })
@@ -618,29 +699,15 @@ impl Client {
     /// Sends a DELETE that the gateway answers with `204 No Content`.
     ///
     /// The shared `delete_json` helper always decodes a JSON body, which an
-    /// empty 204 has none of, so these routes need their own send.
+    /// empty 204 has none of, so these routes read the status alone. The
+    /// request still goes through the shared HTTP client, so it carries the
+    /// credential headers, the caller's extra headers and the configured
+    /// timeout like every other call.
     async fn delete_no_content(&self, path: &str) -> Result<()> {
         let url = format!("{}{}", self.base_url(), path);
-        let auth = self.auth_header().clone();
-        // Proxies that claim the Authorization header read X-API-Key instead,
-        // so send the raw token alongside — same pairing the shared client
-        // applies to every other request.
-        let raw_token = auth
-            .to_str()
-            .unwrap_or_default()
-            .strip_prefix("Bearer ")
-            .unwrap_or_default()
-            .to_string();
+        let resp = self.http().delete(&url).send().await?;
 
-        let http = reqwest::Client::builder().build()?;
-        let mut req = http.delete(&url).header(AUTHORIZATION, auth);
-        if let Ok(value) = HeaderValue::from_str(&raw_token) {
-            req = req.header("X-API-Key", value);
-        }
-        let resp = req.send().await?;
-
-        let status = resp.status();
-        if status.is_success() {
+        if resp.status().is_success() {
             return Ok(());
         }
         let request_id = resp
@@ -649,13 +716,7 @@ impl Client {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_string();
-        let body = resp.text().await.unwrap_or_default();
-        Err(Error::Api(ApiError {
-            status_code: status.as_u16(),
-            code: status.canonical_reason().unwrap_or("Unknown").to_string(),
-            message: body,
-            request_id,
-        }))
+        Err(parse_api_error(resp, &request_id).await)
     }
 }
 
@@ -674,6 +735,48 @@ mod tests {
         assert_eq!(json["name"], "reviewer");
         assert!(json.get("system_prompt").is_none());
         assert!(json.get("tools").is_none());
+    }
+
+    #[test]
+    fn update_carries_stored_prompt_and_tools_forward() {
+        let stored: RuntimeAgent = serde_json::from_str(
+            r#"{"id":"a1","user_id":"u1","name":"reviewer","model":"claude-sonnet-4-6",
+                "system_prompt":"be strict","tools":[{"type":"bash_20250124","name":"bash"}],
+                "version":3,"created_at":"2026-01-01T00:00:00Z",
+                "updated_at":"2026-01-02T00:00:00Z","upstream_id":""}"#,
+        )
+        .expect("decode");
+        let update = RuntimeAgentUpdate {
+            model: Some("claude-opus-5".into()),
+            ..Default::default()
+        };
+        let body = serde_json::to_value(update.apply_to(&stored)).expect("serialize");
+        assert_eq!(body["name"], "reviewer");
+        assert_eq!(body["model"], "claude-opus-5");
+        assert_eq!(body["system_prompt"], "be strict");
+        assert_eq!(body["tools"][0]["name"], "bash");
+    }
+
+    #[test]
+    fn update_can_clear_prompt_and_tools_explicitly() {
+        let stored = RuntimeAgent {
+            name: "reviewer".into(),
+            model: "m".into(),
+            system_prompt: "be strict".into(),
+            tools: vec![RuntimeTool {
+                r#type: "bash_20250124".into(),
+                name: "bash".into(),
+            }],
+            ..Default::default()
+        };
+        let update = RuntimeAgentUpdate {
+            system_prompt: Some(String::new()),
+            tools: Some(Vec::new()),
+            ..Default::default()
+        };
+        let body = serde_json::to_value(update.apply_to(&stored)).expect("serialize");
+        assert!(body.get("system_prompt").is_none());
+        assert_eq!(body["tools"], serde_json::json!([]));
     }
 
     #[test]
@@ -719,5 +822,30 @@ mod tests {
         assert_eq!(env.backend, "managed-agents");
         assert!(env.overlay.is_none());
         assert!(env.vault_ids.is_empty());
+    }
+
+    #[test]
+    fn unparsable_payload_becomes_an_unknown_event() {
+        let event = runtime_event_from_payload(Ok("not json".into()));
+        assert_eq!(event.r#type, "unknown");
+        assert_eq!(event.content, "not json");
+
+        let terminal = runtime_event_from_payload(Ok(
+            r#"{"type":"error","content":"upstream closed","timestamp":"2026-01-01T00:00:00Z"}"#
+                .into(),
+        ));
+        assert_eq!(terminal.r#type, "error");
+        assert_eq!(terminal.content, "upstream closed");
+    }
+
+    #[test]
+    fn transport_failure_becomes_an_error_event() {
+        let err = reqwest::Client::new()
+            .get("http://[::1")
+            .build()
+            .expect_err("invalid url");
+        let event = runtime_event_from_payload(Err(err));
+        assert_eq!(event.r#type, "error");
+        assert!(event.content.starts_with("transport: "));
     }
 }

@@ -209,7 +209,9 @@ pub struct ScanStats {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ScanRequest {
     /// What to scan: a `github://owner/repo` or `https://github.com/...` URL,
-    /// or an OpenAPI spec URL. Required.
+    /// an OpenAPI spec URL, or a directory on the gateway's own filesystem
+    /// under `/workspace` or `/tmp` (any other local path is 403
+    /// `forbidden`). Required.
     pub source: String,
 
     /// Git branch to check out. Defaults to `main`.
@@ -521,7 +523,9 @@ pub struct VerifyRequest {
     /// The expected structure.
     pub blueprint: Blueprint,
 
-    /// Codebase to verify — a GitHub URL.
+    /// Codebase to verify — a GitHub URL, or a directory on the gateway's own
+    /// filesystem under `/workspace` or `/tmp` (any other local path is 403
+    /// `forbidden`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
@@ -690,10 +694,6 @@ pub struct VulnerabilityScanOptions {
     /// Also cross-reference dependencies against known CVEs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cve_check: Option<bool>,
-
-    /// Drop findings below this severity.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub severity_threshold: Option<String>,
 }
 
 /// Request body for `POST /qai/v1/scanner/vulnerabilities`.

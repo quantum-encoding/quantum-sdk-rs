@@ -3,8 +3,9 @@
 //! `POST /qai/v1/cloudrun` runs the whole conductor/worker loop server-side —
 //! tool calls, shell commands included, execute in the gateway's sandbox rather
 //! than on the client — and streams progress back as SSE. Use
-//! [`Client::agent_run`](crate::Client::agent_run) instead when the client
-//! executes the tool calls itself.
+//! [`Client::agent_step`](crate::Client::agent_step) instead when the client
+//! executes the tool calls itself: that route is a single non-streaming turn
+//! that hands the tool calls back.
 //!
 //! Events arrive as [`AgentStreamEvent`]s. The `type` field carries
 //! `agent_session` (the opening event naming the conductor, workers, and step
@@ -29,8 +30,11 @@ pub struct CloudRunWorker {
     /// Model this worker runs on.
     pub model: String,
 
-    /// Cost tier: `"cheap"`, `"mid"`, or `"expensive"`. The in-loop budget
-    /// guard prices each tier from the worker registered against it.
+    /// Cost tier: `"cheap"`, `"mid"`, or `"expensive"`. Used only by the
+    /// in-loop budget guard, which prices each tier from the worker
+    /// registered against it. The final charge ignores tiers: every token
+    /// of the run, workers included, is billed at the conductor model's
+    /// rate.
     pub tier: String,
 
     /// What this worker is for — the conductor reads it when delegating.
@@ -76,9 +80,11 @@ pub struct CloudRunRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
 
-    /// Filesystem path to mount as the worker workspace. An ephemeral
-    /// per-session directory is used when omitted. The gateway does not
-    /// restrict this path — the caller is responsible for vetting it.
+    /// Directory on the gateway's own filesystem to use as the worker
+    /// workspace, relative to the caller's per-user workspace root. An
+    /// absolute path or any `..` segment is rejected with 400
+    /// `invalid_workspace_path`; it never names a directory on the caller's
+    /// machine. An ephemeral per-session directory is used when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
 }
