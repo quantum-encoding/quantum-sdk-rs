@@ -280,6 +280,14 @@ impl Client {
         &self.inner.auth_header
     }
 
+    /// The shared HTTP client: carries the credential headers, the caller's
+    /// extra headers and the configured timeout. Modules that need a verb
+    /// the typed helpers do not offer (a DELETE answering 204, say) build on
+    /// this rather than a fresh `reqwest::Client`.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.inner.http
+    }
+
     /// Sends a JSON POST request and deserializes the response.
     ///
     /// An `Idempotency-Key` header is automatically generated and reused across
