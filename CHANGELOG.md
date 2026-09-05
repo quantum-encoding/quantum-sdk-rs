@@ -13,6 +13,25 @@ Parity with the gateway as of September 2026.
   `create_partner_key`.
 - Credits: `lifetime_plans`, `lifetime_purchase`.
 - Account: `account_delete` (sends the confirmation phrase for you), `account_deletion_status`.
+- New surfaces: media sessions, files (multipart upload), Gemini context caches, licences
+  (`mine`, `revocations`, `public-key`), the code scanner (scan, upload, diff, verify, audit,
+  vulnerabilities, scans and their types and graph), the agent runtime (agents, environments,
+  sessions with an SSE stream, workspaces), the managed-agents passthrough, Cloud Run (SSE)
+  and dedicated inference endpoints (buffered and streaming).
+- Audio: `audio/stt/realtime-token`. Realtime: the ElevenLabs WebSocket proxy with
+  `send_elevenlabs_audio` / `send_json`. Compute: catalog, deploy-model (estimate and
+  confirmed), deployments list/get/extend/delete. Security: `scan-code`.
+
+### Changed (breaking)
+- RAG collections were wrong on the wire and could not have worked: `collections_search`
+  now posts to `/rag/collections/search` with `max_chunks`; `collections_get` returns
+  `CollectionDetail` (`{collection, documents}`); `collections_delete` returns
+  `DeleteCollectionResponse`; `collections_create` takes a request struct;
+  `CollectionUploadResult` is an alias of `CollectionDocument`; `Collection` and
+  `CollectionDocument` fields match the gateway.
+
+### Deprecated
+- `compute_billing`, `scrape`, `screenshot`: their routes no longer exist on the gateway.
 
 ### Fixed
 - `AuthUser.name` / `avatar_url` read the gateway's `display_name` / `photo_url`.
