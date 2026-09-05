@@ -196,18 +196,13 @@ impl Client {
 
     /// Lists all jobs for the account.
     pub async fn list_jobs(&self) -> Result<ListJobsResponse> {
-        let (resp, _meta) = self
-            .get_json::<ListJobsResponse>("/qai/v1/jobs")
-            .await?;
+        let (resp, _meta) = self.get_json::<ListJobsResponse>("/qai/v1/jobs").await?;
         Ok(resp)
     }
 
     /// Opens an SSE stream for a job, returning the raw response.
     /// Events: progress, complete, error. Auto-closes on terminal state.
-    pub async fn stream_job(
-        &self,
-        job_id: &str,
-    ) -> Result<reqwest::Response> {
+    pub async fn stream_job(&self, job_id: &str) -> Result<reqwest::Response> {
         let path = format!("/qai/v1/jobs/{job_id}/stream");
         let (resp, _meta) = self.get_stream_raw(&path).await?;
         Ok(resp)
@@ -234,7 +229,9 @@ impl Client {
             status: "timeout".to_string(),
             job_type: None,
             result: None,
-            error: Some(format!("Job polling timed out after {max_attempts} attempts")),
+            error: Some(format!(
+                "Job polling timed out after {max_attempts} attempts"
+            )),
             cost_ticks: 0,
             request_id: None,
             created_at: None,

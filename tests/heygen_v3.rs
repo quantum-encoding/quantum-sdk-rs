@@ -111,10 +111,7 @@ async fn mock_gateway(
                 let headers: Vec<(String, String)> = lines
                     .filter_map(|line| {
                         let (name, value) = line.split_once(':')?;
-                        Some((
-                            name.trim().to_ascii_lowercase(),
-                            value.trim().to_string(),
-                        ))
+                        Some((name.trim().to_ascii_lowercase(), value.trim().to_string()))
                     })
                     .collect();
 
@@ -135,9 +132,10 @@ async fn mock_gateway(
                     }
                     buf.extend_from_slice(&tmp[..n]);
                 }
-                let req_body =
-                    String::from_utf8_lossy(&buf[body_start..buf.len().min(body_start + content_length)])
-                        .to_string();
+                let req_body = String::from_utf8_lossy(
+                    &buf[body_start..buf.len().min(body_start + content_length)],
+                )
+                .to_string();
 
                 captured.lock().unwrap().push(Captured {
                     method,
@@ -183,7 +181,10 @@ fn client_for(gw: &MockGateway) -> Client {
 }
 
 fn assert_auth(req: &Captured) {
-    assert_eq!(req.header("authorization"), Some(format!("Bearer {TEST_KEY}").as_str()));
+    assert_eq!(
+        req.header("authorization"),
+        Some(format!("Bearer {TEST_KEY}").as_str())
+    );
     assert_eq!(req.header("x-api-key"), Some(TEST_KEY));
 }
 
@@ -233,7 +234,10 @@ async fn create_avatar_realtime_session() {
     assert_eq!(body["voice_id"], "73c0b6a2e29d4d38aca41454bf58c955");
     assert_eq!(body["text"], "Hello! Let me think about that...");
     assert_eq!(body["max_duration_seconds"], 300);
-    assert!(body.get("audio").is_none(), "audio must be omitted for text_stream");
+    assert!(
+        body.get("audio").is_none(),
+        "audio must be omitted for text_stream"
+    );
 
     assert_eq!(resp.stream_id, "rt_9f2c1a");
     assert_eq!(resp.status, "pending");
@@ -264,7 +268,10 @@ async fn get_avatar_realtime_session_streaming() {
     .await;
     let client = client_for(&gw);
 
-    let resp = client.get_avatar_realtime_session("rt_9f2c1a").await.unwrap();
+    let resp = client
+        .get_avatar_realtime_session("rt_9f2c1a")
+        .await
+        .unwrap();
 
     let req = gw.only_request();
     assert_eq!(req.method, "GET");
@@ -297,7 +304,10 @@ async fn get_avatar_realtime_session_completed_omits_optionals() {
     .await;
     let client = client_for(&gw);
 
-    let resp = client.get_avatar_realtime_session("rt_9f2c1a").await.unwrap();
+    let resp = client
+        .get_avatar_realtime_session("rt_9f2c1a")
+        .await
+        .unwrap();
     assert_eq!(resp.status, "completed");
     assert!(resp.hls_url.is_none());
     assert_eq!(resp.end_reason.as_deref(), Some("idle_timeout"));
@@ -367,7 +377,10 @@ async fn cancel_avatar_realtime_session() {
     .await;
     let client = client_for(&gw);
 
-    let resp = client.cancel_avatar_realtime_session("rt_9f2c1a").await.unwrap();
+    let resp = client
+        .cancel_avatar_realtime_session("rt_9f2c1a")
+        .await
+        .unwrap();
 
     let req = gw.only_request();
     assert_eq!(req.method, "POST");
@@ -493,7 +506,10 @@ async fn video_template_detail() {
     assert_eq!(presenter["character_id"], "Abigail_expressive_2024112501");
     assert_eq!(resp.template.scenes.len(), 1);
     assert_eq!(resp.template.scenes[0].scene_id, "scene_1");
-    assert_eq!(resp.template.scenes[0].script, "Introducing {{headline}}...");
+    assert_eq!(
+        resp.template.scenes[0].script,
+        "Introducing {{headline}}..."
+    );
     assert_eq!(resp.template.scenes[0].variables[0].name, "headline");
     assert_eq!(resp.template.scenes[0].variables[0].variable_type, "text");
     assert_eq!(resp.request_id, "req_abc123def45b");
@@ -680,7 +696,13 @@ async fn video_batch_status_settled() {
     assert_eq!(resp.items[0].item_index, 0);
     assert_eq!(resp.items[0].status, "completed");
     assert_eq!(resp.items[0].video_id.as_deref(), Some("vid_001"));
-    assert!(resp.items[0].video_url.as_deref().unwrap().contains("vid_001.mp4"));
+    assert!(
+        resp.items[0]
+            .video_url
+            .as_deref()
+            .unwrap()
+            .contains("vid_001.mp4")
+    );
     let failed = &resp.items[2];
     assert_eq!(failed.status, "failed");
     assert!(failed.video_url.is_none());
@@ -731,7 +753,10 @@ async fn video_batch_status_unsettled_withholds_urls() {
 
     assert_eq!(resp.billing_status, "settlement_pending");
     assert_eq!(resp.cost_ticks, 0);
-    assert!(resp.items[0].video_url.is_none(), "URLs are withheld until settled");
+    assert!(
+        resp.items[0].video_url.is_none(),
+        "URLs are withheld until settled"
+    );
 }
 
 // ---------------------------------------------------------------------------

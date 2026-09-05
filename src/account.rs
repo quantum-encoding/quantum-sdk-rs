@@ -149,9 +149,7 @@ impl Client {
 
     /// Gets the full pricing table (model → pricing entry map).
     pub async fn account_pricing(&self) -> Result<PricingResponse> {
-        let (resp, _meta) = self
-            .get_json::<PricingResponse>("/qai/v1/pricing")
-            .await?;
+        let (resp, _meta) = self.get_json::<PricingResponse>("/qai/v1/pricing").await?;
         Ok(resp)
     }
 }

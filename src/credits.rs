@@ -137,7 +137,10 @@ impl Client {
     }
 
     /// Purchase a credit pack. Returns a checkout URL for payment.
-    pub async fn credit_purchase(&self, req: &CreditPurchaseRequest) -> Result<CreditPurchaseResponse> {
+    pub async fn credit_purchase(
+        &self,
+        req: &CreditPurchaseRequest,
+    ) -> Result<CreditPurchaseResponse> {
         let (resp, _meta) = self
             .post_json::<CreditPurchaseRequest, CreditPurchaseResponse>(
                 "/qai/v1/credits/purchase",
@@ -164,7 +167,10 @@ impl Client {
     }
 
     /// Apply for the developer program.
-    pub async fn dev_program_apply(&self, req: &DevProgramApplyRequest) -> Result<DevProgramApplyResponse> {
+    pub async fn dev_program_apply(
+        &self,
+        req: &DevProgramApplyRequest,
+    ) -> Result<DevProgramApplyResponse> {
         let (resp, _meta) = self
             .post_json::<DevProgramApplyRequest, DevProgramApplyResponse>(
                 "/qai/v1/credits/dev-program",

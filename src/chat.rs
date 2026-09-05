@@ -107,7 +107,11 @@ pub struct ChatMessage {
 
     /// Structured content for assistant messages with tool calls.
     /// When present, takes precedence over `content`.
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_opt_vec", default)]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_opt_vec",
+        default
+    )]
     pub content_blocks: Option<Vec<ContentBlock>>,
 
     /// Required when role is "tool" — references the tool_use ID.
@@ -604,7 +608,9 @@ impl Client {
         req.stream = Some(false);
         self.apply_region(&mut req);
 
-        let (mut resp, meta) = self.post_json::<ChatRequest, ChatResponse>("/qai/v1/chat", &req).await?;
+        let (mut resp, meta) = self
+            .post_json::<ChatRequest, ChatResponse>("/qai/v1/chat", &req)
+            .await?;
         resp.cost_ticks = meta.cost_ticks;
         resp.request_id = meta.request_id;
         if resp.model.is_empty() {

@@ -33,8 +33,8 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::net::TcpStream;
-use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use crate::client::Client;
@@ -171,11 +171,7 @@ impl Client {
             .trim_end_matches('/')
             .to_string();
 
-        let auth = self
-            .auth_header()
-            .to_str()
-            .unwrap_or("")
-            .to_string();
+        let auth = self.auth_header().to_str().unwrap_or("").to_string();
 
         // Extract raw token (strip "Bearer " prefix) for X-API-Key
         let raw_token = auth.strip_prefix("Bearer ").unwrap_or(&auth);
@@ -193,12 +189,14 @@ impl Client {
                 tokio_tungstenite::tungstenite::handshake::client::generate_key(),
             )
             .body(())
-            .map_err(|e| Error::Api(ApiError {
-                status_code: 0,
-                code: "websocket_request".into(),
-                message: format!("Failed to build WebSocket request: {e}"),
-                request_id: String::new(),
-            }))?;
+            .map_err(|e| {
+                Error::Api(ApiError {
+                    status_code: 0,
+                    code: "websocket_request".into(),
+                    message: format!("Failed to build WebSocket request: {e}"),
+                    request_id: String::new(),
+                })
+            })?;
 
         // Connect with timeout
         let (ws_stream, _response) = tokio::time::timeout(
@@ -206,12 +204,14 @@ impl Client {
             tokio_tungstenite::connect_async(request),
         )
         .await
-        .map_err(|_| Error::Api(ApiError {
-            status_code: 0,
-            code: "timeout".into(),
-            message: "WebSocket connection timed out (15s)".into(),
-            request_id: String::new(),
-        }))?
+        .map_err(|_| {
+            Error::Api(ApiError {
+                status_code: 0,
+                code: "timeout".into(),
+                message: "WebSocket connection timed out (15s)".into(),
+                request_id: String::new(),
+            })
+        })?
         .map_err(Error::WebSocket)?;
 
         let (sink, stream) = ws_stream.split();
@@ -222,7 +222,9 @@ impl Client {
 
         // Send session.update with config
         let session_update = build_session_update(config);
-        sender.send_raw(&serde_json::to_string(&session_update)?).await?;
+        sender
+            .send_raw(&serde_json::to_string(&session_update)?)
+            .await?;
 
         Ok((sender, receiver))
     }
@@ -256,8 +258,11 @@ pub type RealtimeSessionResponse = RealtimeSession;
 impl RealtimeSession {
     /// Get the WebSocket URL — checks both `url` and `signed_url` fields.
     pub fn ws_url(&self) -> &str {
-        if !self.signed_url.is_empty() { &self.signed_url }
-        else { &self.url }
+        if !self.signed_url.is_empty() {
+            &self.signed_url
+        } else {
+            &self.url
+        }
     }
 }
 
@@ -271,7 +276,8 @@ impl Client {
 
     /// Request an ephemeral token for a specific provider.
     pub async fn realtime_session_for(&self, provider: Option<&str>) -> Result<RealtimeSession> {
-        self.realtime_session_with(provider, serde_json::json!({})).await
+        self.realtime_session_with(provider, serde_json::json!({}))
+            .await
     }
 
     /// Request a realtime session with full configuration.
@@ -285,9 +291,8 @@ impl Client {
         if let Some(p) = provider {
             body["provider"] = serde_json::Value::String(p.to_string());
         }
-        let (session, _meta): (RealtimeSession, _) = self
-            .post_json("/qai/v1/realtime/session", &body)
-            .await?;
+        let (session, _meta): (RealtimeSession, _) =
+            self.post_json("/qai/v1/realtime/session", &body).await?;
         Ok(session)
     }
 
@@ -313,10 +318,7 @@ impl Client {
                 &serde_json::json!({ "session_id": session_id }),
             )
             .await?;
-        Ok(resp["ephemeral_token"]
-            .as_str()
-            .unwrap_or("")
-            .to_string())
+        Ok(resp["ephemeral_token"].as_str().unwrap_or("").to_string())
     }
 }
 
@@ -357,24 +359,28 @@ pub async fn realtime_connect_direct_to(
             tokio_tungstenite::tungstenite::handshake::client::generate_key(),
         )
         .body(())
-        .map_err(|e| Error::Api(ApiError {
-            status_code: 0,
-            code: "websocket_request".into(),
-            message: format!("Failed to build WebSocket request: {e}"),
-            request_id: String::new(),
-        }))?;
+        .map_err(|e| {
+            Error::Api(ApiError {
+                status_code: 0,
+                code: "websocket_request".into(),
+                message: format!("Failed to build WebSocket request: {e}"),
+                request_id: String::new(),
+            })
+        })?;
 
     let (ws_stream, _response) = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         tokio_tungstenite::connect_async(request),
     )
     .await
-    .map_err(|_| Error::Api(ApiError {
-        status_code: 0,
-        code: "timeout".into(),
-        message: "Direct xAI WebSocket connection timed out (10s)".into(),
-        request_id: String::new(),
-    }))?
+    .map_err(|_| {
+        Error::Api(ApiError {
+            status_code: 0,
+            code: "timeout".into(),
+            message: "Direct xAI WebSocket connection timed out (10s)".into(),
+            request_id: String::new(),
+        })
+    })?
     .map_err(Error::WebSocket)?;
 
     let (sink, stream) = ws_stream.split();
@@ -385,7 +391,9 @@ pub async fn realtime_connect_direct_to(
 
     // Send session.update
     let session_update = build_session_update(config);
-    sender.send_raw(&serde_json::to_string(&session_update)?).await?;
+    sender
+        .send_raw(&serde_json::to_string(&session_update)?)
+        .await?;
 
     Ok((sender, receiver))
 }
@@ -414,7 +422,8 @@ fn build_session_update(config: &RealtimeConfig) -> serde_json::Value {
         session["modalities"] = serde_json::json!(["text", "audio"]);
         session["input_audio_format"] = serde_json::json!("pcm16");
         session["output_audio_format"] = serde_json::json!("pcm16");
-        session["input_audio_transcription"] = serde_json::json!({ "model": "gpt-4o-mini-transcribe" });
+        session["input_audio_transcription"] =
+            serde_json::json!({ "model": "gpt-4o-mini-transcribe" });
     } else {
         // xAI Realtime API format
         session["input_audio_transcription"] = serde_json::json!({ "model": "grok-2-audio" });
@@ -564,12 +573,10 @@ fn parse_event(text: &str) -> RealtimeEvent {
             }
         }
 
-        "conversation.item.input_audio_transcription.completed" => {
-            RealtimeEvent::TranscriptDone {
-                transcript: v["transcript"].as_str().unwrap_or("").to_string(),
-                source: "input".into(),
-            }
-        }
+        "conversation.item.input_audio_transcription.completed" => RealtimeEvent::TranscriptDone {
+            transcript: v["transcript"].as_str().unwrap_or("").to_string(),
+            source: "input".into(),
+        },
 
         "input_audio_buffer.speech_started" => RealtimeEvent::SpeechStarted,
         "input_audio_buffer.speech_stopped" => RealtimeEvent::SpeechStopped,
@@ -672,7 +679,11 @@ mod tests {
             r#"{"type":"response.function_call_arguments.done","name":"get_weather","call_id":"call_123","arguments":"{\"location\":\"London\"}"}"#,
         );
         match event {
-            RealtimeEvent::FunctionCall { name, call_id, arguments } => {
+            RealtimeEvent::FunctionCall {
+                name,
+                call_id,
+                arguments,
+            } => {
                 assert_eq!(name, "get_weather");
                 assert_eq!(call_id, "call_123");
                 assert!(arguments.contains("London"));

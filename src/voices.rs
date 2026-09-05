@@ -237,9 +237,7 @@ fn encode_query_value(s: &str) -> String {
 impl Client {
     /// Lists all available TTS voices (built-in and cloned).
     pub async fn list_voices(&self) -> Result<VoicesResponse> {
-        let (resp, _meta) = self
-            .get_json::<VoicesResponse>("/qai/v1/voices")
-            .await?;
+        let (resp, _meta) = self.get_json::<VoicesResponse>("/qai/v1/voices").await?;
         Ok(resp)
     }
 
@@ -275,10 +273,7 @@ impl Client {
     }
 
     /// Browses the shared voice library with optional filters.
-    pub async fn voice_library(
-        &self,
-        query: &VoiceLibraryQuery,
-    ) -> Result<SharedVoicesResponse> {
+    pub async fn voice_library(&self, query: &VoiceLibraryQuery) -> Result<SharedVoicesResponse> {
         let mut params = Vec::new();
         if let Some(ref q) = query.query {
             params.push(format!("query={}", encode_query_value(q)));
@@ -305,9 +300,7 @@ impl Client {
             format!("/qai/v1/voices/library?{}", params.join("&"))
         };
 
-        let (resp, _meta) = self
-            .get_json::<SharedVoicesResponse>(&path)
-            .await?;
+        let (resp, _meta) = self.get_json::<SharedVoicesResponse>(&path).await?;
         Ok(resp)
     }
 

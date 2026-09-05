@@ -415,7 +415,10 @@ pub struct MissionStatusResponse {
 
 impl Client {
     /// Create and execute a mission asynchronously.
-    pub async fn mission_create(&self, req: &MissionCreateRequest) -> Result<MissionCreateResponse> {
+    pub async fn mission_create(
+        &self,
+        req: &MissionCreateRequest,
+    ) -> Result<MissionCreateResponse> {
         let (resp, _) = self.post_json("/qai/v1/missions/create", req).await?;
         Ok(resp)
     }
@@ -432,72 +435,126 @@ impl Client {
 
     /// Get mission details including tasks.
     pub async fn mission_get(&self, mission_id: &str) -> Result<MissionDetail> {
-        let (resp, _) = self.get_json(&format!("/qai/v1/missions/{}", mission_id)).await?;
+        let (resp, _) = self
+            .get_json(&format!("/qai/v1/missions/{}", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Delete a mission.
     pub async fn mission_delete(&self, mission_id: &str) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.delete_json(&format!("/qai/v1/missions/{}", mission_id)).await?;
+        let (resp, _) = self
+            .delete_json(&format!("/qai/v1/missions/{}", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Cancel a running mission.
     pub async fn mission_cancel(&self, mission_id: &str) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json_empty(&format!("/qai/v1/missions/{}/cancel", mission_id)).await?;
+        let (resp, _) = self
+            .post_json_empty(&format!("/qai/v1/missions/{}/cancel", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Pause a running mission.
     pub async fn mission_pause(&self, mission_id: &str) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json_empty(&format!("/qai/v1/missions/{}/pause", mission_id)).await?;
+        let (resp, _) = self
+            .post_json_empty(&format!("/qai/v1/missions/{}/pause", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Resume a paused mission.
     pub async fn mission_resume(&self, mission_id: &str) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json_empty(&format!("/qai/v1/missions/{}/resume", mission_id)).await?;
+        let (resp, _) = self
+            .post_json_empty(&format!("/qai/v1/missions/{}/resume", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Chat with the mission's architect.
-    pub async fn mission_chat(&self, mission_id: &str, req: &MissionChatRequest) -> Result<MissionChatResponse> {
-        let (resp, _) = self.post_json(&format!("/qai/v1/missions/{}/chat", mission_id), req).await?;
+    pub async fn mission_chat(
+        &self,
+        mission_id: &str,
+        req: &MissionChatRequest,
+    ) -> Result<MissionChatResponse> {
+        let (resp, _) = self
+            .post_json(&format!("/qai/v1/missions/{}/chat", mission_id), req)
+            .await?;
         Ok(resp)
     }
 
     /// Retry a failed task.
-    pub async fn mission_retry_task(&self, mission_id: &str, task_id: &str) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json_empty(&format!("/qai/v1/missions/{}/retry/{}", mission_id, task_id)).await?;
+    pub async fn mission_retry_task(
+        &self,
+        mission_id: &str,
+        task_id: &str,
+    ) -> Result<MissionStatusResponse> {
+        let (resp, _) = self
+            .post_json_empty(&format!(
+                "/qai/v1/missions/{}/retry/{}",
+                mission_id, task_id
+            ))
+            .await?;
         Ok(resp)
     }
 
     /// Approve a completed mission.
-    pub async fn mission_approve(&self, mission_id: &str, req: &MissionApproveRequest) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json(&format!("/qai/v1/missions/{}/approve", mission_id), req).await?;
+    pub async fn mission_approve(
+        &self,
+        mission_id: &str,
+        req: &MissionApproveRequest,
+    ) -> Result<MissionStatusResponse> {
+        let (resp, _) = self
+            .post_json(&format!("/qai/v1/missions/{}/approve", mission_id), req)
+            .await?;
         Ok(resp)
     }
 
     /// Update the mission plan.
-    pub async fn mission_update_plan(&self, mission_id: &str, req: &MissionPlanUpdate) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.put_json(&format!("/qai/v1/missions/{}/plan", mission_id), req).await?;
+    pub async fn mission_update_plan(
+        &self,
+        mission_id: &str,
+        req: &MissionPlanUpdate,
+    ) -> Result<MissionStatusResponse> {
+        let (resp, _) = self
+            .put_json(&format!("/qai/v1/missions/{}/plan", mission_id), req)
+            .await?;
         Ok(resp)
     }
 
     /// Confirm or reject the proposed execution structure.
-    pub async fn mission_confirm_structure(&self, mission_id: &str, req: &MissionConfirmStructure) -> Result<MissionStatusResponse> {
-        let (resp, _) = self.post_json(&format!("/qai/v1/missions/{}/confirm-structure", mission_id), req).await?;
+    pub async fn mission_confirm_structure(
+        &self,
+        mission_id: &str,
+        req: &MissionConfirmStructure,
+    ) -> Result<MissionStatusResponse> {
+        let (resp, _) = self
+            .post_json(
+                &format!("/qai/v1/missions/{}/confirm-structure", mission_id),
+                req,
+            )
+            .await?;
         Ok(resp)
     }
 
     /// List git checkpoints for a mission.
-    pub async fn mission_checkpoints(&self, mission_id: &str) -> Result<MissionCheckpointsResponse> {
-        let (resp, _) = self.get_json(&format!("/qai/v1/missions/{}/checkpoints", mission_id)).await?;
+    pub async fn mission_checkpoints(
+        &self,
+        mission_id: &str,
+    ) -> Result<MissionCheckpointsResponse> {
+        let (resp, _) = self
+            .get_json(&format!("/qai/v1/missions/{}/checkpoints", mission_id))
+            .await?;
         Ok(resp)
     }
 
     /// Import an existing plan as a new mission.
-    pub async fn mission_import(&self, req: &MissionImportRequest) -> Result<MissionCreateResponse> {
+    pub async fn mission_import(
+        &self,
+        req: &MissionImportRequest,
+    ) -> Result<MissionCreateResponse> {
         let (resp, _) = self.post_json("/qai/v1/missions/import", req).await?;
         Ok(resp)
     }

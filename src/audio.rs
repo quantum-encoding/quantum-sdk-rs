@@ -287,14 +287,16 @@ impl DialogueRequest {
     /// Converts turns into the text + voices format the API expects.
     pub fn from_turns(turns: Vec<DialogueTurn>, model: Option<String>) -> Self {
         // Build the script text: "Speaker: text\n..."
-        let text = turns.iter()
+        let text = turns
+            .iter()
             .map(|t| format!("{}: {}", t.speaker, t.text))
             .collect::<Vec<_>>()
             .join("\n");
 
         // Deduplicate voices — one entry per unique speaker
         let mut seen = std::collections::HashSet::new();
-        let voices: Vec<DialogueVoice> = turns.iter()
+        let voices: Vec<DialogueVoice> = turns
+            .iter()
             .filter(|t| t.voice.is_some() && seen.insert(t.speaker.clone()))
             .map(|t| DialogueVoice {
                 voice_id: t.voice.clone().unwrap_or_default(),
@@ -882,10 +884,7 @@ impl Client {
         &self,
         query: &AudioSoundsQuery,
     ) -> Result<AudioSoundsResponse> {
-        let mut params = vec![format!(
-            "query={}",
-            urlencoding::encode(&query.query)
-        )];
+        let mut params = vec![format!("query={}", urlencoding::encode(&query.query))];
         if let Some(ref t) = query.sound_type {
             params.push(format!("type={}", urlencoding::encode(t)));
         }
@@ -977,10 +976,7 @@ impl Client {
     }
 
     /// Converts speech to a different voice.
-    pub async fn speech_to_speech(
-        &self,
-        req: &SpeechToSpeechRequest,
-    ) -> Result<AudioResponse> {
+    pub async fn speech_to_speech(&self, req: &SpeechToSpeechRequest) -> Result<AudioResponse> {
         let (mut resp, meta) = self
             .post_json::<SpeechToSpeechRequest, AudioResponse>(
                 "/qai/v1/audio/speech-to-speech",

@@ -10,7 +10,8 @@ use quantum_sdk::{ChatMessage, ChatRequest, Client};
 
 #[tokio::main]
 async fn main() {
-    let api_key = std::env::var("QAI_API_KEY").expect("QAI_API_KEY environment variable is required");
+    let api_key =
+        std::env::var("QAI_API_KEY").expect("QAI_API_KEY environment variable is required");
 
     let client = Client::new(api_key);
 
@@ -50,9 +51,7 @@ async fn main() {
     let mut stream = client
         .chat_stream(&ChatRequest {
             model: "claude-opus-4-8".into(),
-            messages: vec![ChatMessage::user(
-                "Count from 1 to 5, one number per line.",
-            )],
+            messages: vec![ChatMessage::user("Count from 1 to 5, one number per line.")],
             ..Default::default()
         })
         .await

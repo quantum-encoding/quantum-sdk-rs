@@ -365,7 +365,10 @@ impl Client {
     }
 
     /// Lists documents in a collection.
-    pub async fn collections_documents(&self, collection_id: &str) -> Result<Vec<CollectionDocument>> {
+    pub async fn collections_documents(
+        &self,
+        collection_id: &str,
+    ) -> Result<Vec<CollectionDocument>> {
         let (resp, _meta) = self
             .get_json::<CollectionDocumentsResponse>(&format!(
                 "/qai/v1/rag/collections/{collection_id}/documents"
@@ -385,12 +388,14 @@ impl Client {
         let part = reqwest::multipart::Part::bytes(content)
             .file_name(filename.to_string())
             .mime_str("application/octet-stream")
-            .map_err(|e| crate::error::Error::Api(crate::error::ApiError {
-                status_code: 0,
-                code: "multipart_error".into(),
-                message: e.to_string(),
-                request_id: String::new(),
-            }))?;
+            .map_err(|e| {
+                crate::error::Error::Api(crate::error::ApiError {
+                    status_code: 0,
+                    code: "multipart_error".into(),
+                    message: e.to_string(),
+                    request_id: String::new(),
+                })
+            })?;
         let form = reqwest::multipart::Form::new().part("file", part);
         let (resp, _meta) = self
             .post_multipart::<CollectionUploadResult>(

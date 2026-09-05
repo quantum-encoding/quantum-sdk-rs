@@ -261,13 +261,18 @@ pub struct SecurityReportResponse {
 impl Client {
     /// Scan a URL for prompt injection attacks.
     pub async fn security_scan_url(&self, url: &str) -> Result<SecurityScanResponse> {
-        let req = SecurityScanUrlRequest { url: url.to_string() };
+        let req = SecurityScanUrlRequest {
+            url: url.to_string(),
+        };
         let (resp, _) = self.post_json("/qai/v1/security/scan-url", &req).await?;
         Ok(resp)
     }
 
     /// Scan raw HTML content for prompt injection.
-    pub async fn security_scan_html(&self, req: &SecurityScanHtmlRequest) -> Result<SecurityScanResponse> {
+    pub async fn security_scan_html(
+        &self,
+        req: &SecurityScanHtmlRequest,
+    ) -> Result<SecurityScanResponse> {
         let (resp, _) = self.post_json("/qai/v1/security/scan-html", req).await?;
         Ok(resp)
     }
@@ -275,12 +280,17 @@ impl Client {
     /// Check a URL against the injection registry.
     pub async fn security_check(&self, url: &str) -> Result<SecurityCheckResponse> {
         let encoded = urlencoding::encode(url);
-        let (resp, _) = self.get_json(&format!("/qai/v1/security/check?url={}", encoded)).await?;
+        let (resp, _) = self
+            .get_json(&format!("/qai/v1/security/check?url={}", encoded))
+            .await?;
         Ok(resp)
     }
 
     /// Get the injection blocklist feed.
-    pub async fn security_blocklist(&self, status: Option<&str>) -> Result<SecurityBlocklistResponse> {
+    pub async fn security_blocklist(
+        &self,
+        status: Option<&str>,
+    ) -> Result<SecurityBlocklistResponse> {
         let path = match status {
             Some(s) => format!("/qai/v1/security/blocklist?status={}", s),
             None => "/qai/v1/security/blocklist".into(),
@@ -290,7 +300,10 @@ impl Client {
     }
 
     /// Report a suspicious URL.
-    pub async fn security_report(&self, req: &SecurityReportRequest) -> Result<SecurityReportResponse> {
+    pub async fn security_report(
+        &self,
+        req: &SecurityReportRequest,
+    ) -> Result<SecurityReportResponse> {
         let (resp, _) = self.post_json("/qai/v1/security/report", req).await?;
         Ok(resp)
     }

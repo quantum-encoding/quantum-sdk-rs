@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use serde::de::DeserializeOwned;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
@@ -150,11 +150,7 @@ impl ClientBuilder {
     /// [`build`](Self::build) to return an `invalid_header` error.
     ///
     /// Header names and values are validated at `build()` time, not here.
-    pub fn extra_header(
-        mut self,
-        name: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Self {
+    pub fn extra_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.extra_headers.push((name.into(), value.into()));
         self
     }
@@ -187,9 +183,8 @@ impl ClientBuilder {
                     "header '{name}' is reserved by the SDK and cannot be overridden via extra_header"
                 )));
             }
-            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
-                invalid_header_error(format!("invalid header name '{name}': {e}"))
-            })?;
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|e| invalid_header_error(format!("invalid header name '{name}': {e}")))?;
             let header_value = HeaderValue::from_str(value).map_err(|e| {
                 invalid_header_error(format!("invalid header value for '{name}': {e}"))
             })?;
@@ -320,8 +315,7 @@ impl Client {
         let body_bytes = serde_json::to_vec(body)?;
         // Caller key wins; otherwise generate one. Either way the same
         // key is reused across retries so the backend deduplicates.
-        let idempotency_key =
-            idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let idempotency_key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
 
         let mut last_err = None;
         for attempt in 0..=MAX_RETRIES {
@@ -347,7 +341,11 @@ impl Client {
             if status.is_success() {
                 let body_text = resp.text().await?;
                 let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-                    let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+                    let preview = if body_text.len() > 300 {
+                        &body_text[..300]
+                    } else {
+                        &body_text
+                    };
                     eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
                     e
                 })?;
@@ -358,7 +356,9 @@ impl Client {
                 // Read body to check if it's a permanent error wrapped in 502
                 let body_text = resp.text().await.unwrap_or_default();
                 if is_permanent_error(&body_text) {
-                    eprintln!("[sdk] POST {path} returned {status} but error is permanent, not retrying");
+                    eprintln!(
+                        "[sdk] POST {path} returned {status} but error is permanent, not retrying"
+                    );
                     let err = parse_api_error_from_text(status, &body_text, &meta.request_id);
                     return Err(err);
                 }
@@ -371,12 +371,14 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        Err(last_err.unwrap_or_else(|| Error::Api(ApiError {
-            status_code: 502,
-            code: "retry_exhausted".into(),
-            message: format!("max retries ({MAX_RETRIES}) exceeded"),
-            request_id: String::new(),
-        })))
+        Err(last_err.unwrap_or_else(|| {
+            Error::Api(ApiError {
+                status_code: 502,
+                code: "retry_exhausted".into(),
+                message: format!("max retries ({MAX_RETRIES}) exceeded"),
+                request_id: String::new(),
+            })
+        }))
     }
 
     /// Sends a POST request and returns the raw JSON response.
@@ -413,7 +415,11 @@ impl Client {
             if status.is_success() {
                 let body_text = resp.text().await?;
                 let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-                    let preview = if body_text.len() > 300 { &body_text[..300] } else { &body_text };
+                    let preview = if body_text.len() > 300 {
+                        &body_text[..300]
+                    } else {
+                        &body_text
+                    };
                     eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
                     e
                 })?;
@@ -423,23 +429,35 @@ impl Client {
             if is_retryable(status) && attempt < MAX_RETRIES {
                 let body_text = resp.text().await.unwrap_or_default();
                 if is_permanent_error(&body_text) {
-                    eprintln!("[sdk] GET {path} returned {status} but error is permanent, not retrying");
-                    return Err(parse_api_error_from_text(status, &body_text, &meta.request_id));
+                    eprintln!(
+                        "[sdk] GET {path} returned {status} but error is permanent, not retrying"
+                    );
+                    return Err(parse_api_error_from_text(
+                        status,
+                        &body_text,
+                        &meta.request_id,
+                    ));
                 }
                 eprintln!("[sdk] GET {path} returned {status}, will retry");
-                last_err = Some(parse_api_error_from_text(status, &body_text, &meta.request_id));
+                last_err = Some(parse_api_error_from_text(
+                    status,
+                    &body_text,
+                    &meta.request_id,
+                ));
                 continue;
             }
 
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        Err(last_err.unwrap_or_else(|| Error::Api(ApiError {
-            status_code: 502,
-            code: "retry_exhausted".into(),
-            message: format!("max retries ({MAX_RETRIES}) exceeded"),
-            request_id: String::new(),
-        })))
+        Err(last_err.unwrap_or_else(|| {
+            Error::Api(ApiError {
+                status_code: 502,
+                code: "retry_exhausted".into(),
+                message: format!("max retries ({MAX_RETRIES}) exceeded"),
+                request_id: String::new(),
+            })
+        }))
     }
 
     /// Sends a DELETE request and deserializes the response.
@@ -479,7 +497,10 @@ impl Client {
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
         let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let resp = self.inner.http.post(&url)
+        let resp = self
+            .inner
+            .http
+            .post(&url)
             .header("content-type", "application/json")
             .header("Idempotency-Key", key)
             .body("{}")
@@ -536,7 +557,10 @@ impl Client {
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
         let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let resp = self.inner.http.post(&url)
+        let resp = self
+            .inner
+            .http
+            .post(&url)
             .header("Idempotency-Key", key)
             .multipart(form)
             .send()
@@ -555,10 +579,7 @@ impl Client {
     /// Sends a GET request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
     /// Uses a separate client without timeout — cancellation is via drop.
-    pub async fn get_stream_raw(
-        &self,
-        path: &str,
-    ) -> Result<(reqwest::Response, ResponseMeta)> {
+    pub async fn get_stream_raw(&self, path: &str) -> Result<(reqwest::Response, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
 
         let stream_client = reqwest::Client::builder().build()?;
@@ -589,7 +610,8 @@ impl Client {
         path: &str,
         body: &impl Serialize,
     ) -> Result<(reqwest::Response, ResponseMeta)> {
-        self.post_stream_raw_with_idempotency(path, body, None).await
+        self.post_stream_raw_with_idempotency(path, body, None)
+            .await
     }
 
     /// Like [`post_stream_raw`](Self::post_stream_raw) but with a
@@ -705,16 +727,29 @@ fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id
     let status_text = status.canonical_reason().unwrap_or("Unknown").to_string();
 
     let (code, message) = if let Ok(err_body) = serde_json::from_str::<ApiErrorBody>(body) {
-        let msg = if err_body.error.message.is_empty() { body.to_string() } else { err_body.error.message };
-        let c = if !err_body.error.code.is_empty() { err_body.error.code }
-                else if !err_body.error.error_type.is_empty() { err_body.error.error_type }
-                else { status_text };
+        let msg = if err_body.error.message.is_empty() {
+            body.to_string()
+        } else {
+            err_body.error.message
+        };
+        let c = if !err_body.error.code.is_empty() {
+            err_body.error.code
+        } else if !err_body.error.error_type.is_empty() {
+            err_body.error.error_type
+        } else {
+            status_text
+        };
         (c, msg)
     } else {
         (status_text, body.to_string())
     };
 
-    Error::Api(ApiError { status_code, code, message, request_id: request_id.to_string() })
+    Error::Api(ApiError {
+        status_code,
+        code,
+        message,
+        request_id: request_id.to_string(),
+    })
 }
 
 #[cfg(test)]

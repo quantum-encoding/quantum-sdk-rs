@@ -145,12 +145,18 @@ pub struct AvatarRealtimeTextRequest {
 impl AvatarRealtimeTextRequest {
     /// A delta-append request.
     pub fn delta(delta: impl Into<String>) -> Self {
-        Self { delta: delta.into(), is_final: false }
+        Self {
+            delta: delta.into(),
+            is_final: false,
+        }
     }
 
     /// A close-the-stream request (empty final marker).
     pub fn final_marker() -> Self {
-        Self { delta: String::new(), is_final: true }
+        Self {
+            delta: String::new(),
+            is_final: true,
+        }
     }
 }
 
@@ -230,9 +236,7 @@ impl Client {
         stream_id: &str,
     ) -> Result<AvatarRealtimeStatusResponse> {
         let path = format!("/qai/v1/avatar/realtime/{stream_id}");
-        let (resp, _meta) = self
-            .get_json::<AvatarRealtimeStatusResponse>(&path)
-            .await?;
+        let (resp, _meta) = self.get_json::<AvatarRealtimeStatusResponse>(&path).await?;
         Ok(resp)
     }
 

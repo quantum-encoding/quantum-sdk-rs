@@ -521,10 +521,7 @@ impl Client {
         req: &SearchContextRequest,
     ) -> Result<SearchContextResponse> {
         let (resp, _meta) = self
-            .post_json::<SearchContextRequest, SearchContextResponse>(
-                "/qai/v1/search/context",
-                req,
-            )
+            .post_json::<SearchContextRequest, SearchContextResponse>("/qai/v1/search/context", req)
             .await?;
         Ok(resp)
     }
@@ -533,10 +530,7 @@ impl Client {
     /// with citations.
     pub async fn search_answer(&self, req: &SearchAnswerRequest) -> Result<SearchAnswerResponse> {
         let (resp, _meta) = self
-            .post_json::<SearchAnswerRequest, SearchAnswerResponse>(
-                "/qai/v1/search/answer",
-                req,
-            )
+            .post_json::<SearchAnswerRequest, SearchAnswerResponse>("/qai/v1/search/answer", req)
             .await?;
         Ok(resp)
     }
@@ -550,15 +544,9 @@ impl Client {
     /// ($0.035 each). Use `search_answer` (Brave-backed) for cheap
     /// high-volume search; reach for this when answer quality matters
     /// more than per-call cost.
-    pub async fn google_search(
-        &self,
-        req: &GoogleSearchRequest,
-    ) -> Result<GoogleSearchResponse> {
+    pub async fn google_search(&self, req: &GoogleSearchRequest) -> Result<GoogleSearchResponse> {
         let (resp, _meta) = self
-            .post_json::<GoogleSearchRequest, GoogleSearchResponse>(
-                "/qai/v1/search/google",
-                req,
-            )
+            .post_json::<GoogleSearchRequest, GoogleSearchResponse>("/qai/v1/search/google", req)
             .await?;
         Ok(resp)
     }

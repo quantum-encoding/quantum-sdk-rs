@@ -717,9 +717,7 @@ impl Client {
         template_id: &str,
     ) -> Result<VideoTemplateDetailResponse> {
         let path = format!("/qai/v1/video/template/{template_id}");
-        let (resp, _meta) = self
-            .get_json::<VideoTemplateDetailResponse>(&path)
-            .await?;
+        let (resp, _meta) = self.get_json::<VideoTemplateDetailResponse>(&path).await?;
         Ok(resp)
     }
 
@@ -779,9 +777,7 @@ impl Client {
         if !params.is_empty() {
             path = format!("{path}?{}", params.join("&"));
         }
-        let (resp, _meta) = self
-            .get_json::<VideoBatchStatusResponse>(&path)
-            .await?;
+        let (resp, _meta) = self.get_json::<VideoBatchStatusResponse>(&path).await?;
         Ok(resp)
     }
 }

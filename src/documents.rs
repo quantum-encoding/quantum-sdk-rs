@@ -157,9 +157,15 @@ impl Client {
     }
 
     /// Splits a document into chunks suitable for embeddings or RAG.
-    pub async fn chunk_document(&self, req: &ChunkDocumentRequest) -> Result<ChunkDocumentResponse> {
+    pub async fn chunk_document(
+        &self,
+        req: &ChunkDocumentRequest,
+    ) -> Result<ChunkDocumentResponse> {
         let (mut resp, meta) = self
-            .post_json::<ChunkDocumentRequest, ChunkDocumentResponse>("/qai/v1/documents/chunk", req)
+            .post_json::<ChunkDocumentRequest, ChunkDocumentResponse>(
+                "/qai/v1/documents/chunk",
+                req,
+            )
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;
@@ -171,9 +177,15 @@ impl Client {
     }
 
     /// Processes a document with AI (extraction + analysis in one step).
-    pub async fn process_document(&self, req: &ProcessDocumentRequest) -> Result<ProcessDocumentResponse> {
+    pub async fn process_document(
+        &self,
+        req: &ProcessDocumentRequest,
+    ) -> Result<ProcessDocumentResponse> {
         let (mut resp, meta) = self
-            .post_json::<ProcessDocumentRequest, ProcessDocumentResponse>("/qai/v1/documents/process", req)
+            .post_json::<ProcessDocumentRequest, ProcessDocumentResponse>(
+                "/qai/v1/documents/process",
+                req,
+            )
             .await?;
         if resp.cost_ticks == 0 {
             resp.cost_ticks = meta.cost_ticks;

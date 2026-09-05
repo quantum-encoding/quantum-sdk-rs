@@ -47,7 +47,6 @@ pub struct ImageRequest {
     pub image_url: Option<String>,
 
     // ── Meshy 3D generation options ──
-
     /// Mesh topology: "triangle" or "quad".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topology: Option<String>,

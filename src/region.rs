@@ -114,10 +114,7 @@ mod tests {
 
     #[test]
     fn serde_uses_the_wire_names() {
-        assert_eq!(
-            serde_json::to_string(&Region::Asia).unwrap(),
-            "\"asia\""
-        );
+        assert_eq!(serde_json::to_string(&Region::Asia).unwrap(), "\"asia\"");
         assert_eq!(
             serde_json::from_str::<Region>("\"europe\"").unwrap(),
             Region::Europe

@@ -37,8 +37,8 @@ pub mod embeddings;
 pub mod error;
 pub mod image;
 pub mod jobs;
-pub mod mesh;
 pub mod keys;
+pub mod mesh;
 pub mod missions;
 pub mod models;
 pub mod rag;
@@ -54,13 +54,13 @@ pub mod vision;
 pub mod voices;
 
 // Re-export primary types at crate root for convenience.
-pub use client::{Client, ClientBuilder, ResponseMeta, DEFAULT_BASE_URL, TICKS_PER_USD};
+pub use client::{Client, ClientBuilder, DEFAULT_BASE_URL, ResponseMeta, TICKS_PER_USD};
 pub use error::{ApiError, Error, ErrorCode, Result};
 
 // Chat types
 pub use chat::{
-    ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation, ContentBlock,
-    EstimateResponse, StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete,
+    ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation,
+    ContentBlock, EstimateResponse, StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete,
     StreamToolUseInputDelta, StreamToolUseStart,
 };
 // Canonical stop_reason constants (`stop_reason::END_TURN`, etc.).
@@ -79,9 +79,7 @@ pub use agent::{
 };
 
 // Image types
-pub use image::{
-    GeneratedImage, ImageEditRequest, ImageEditResponse, ImageRequest, ImageResponse,
-};
+pub use image::{GeneratedImage, ImageEditRequest, ImageEditResponse, ImageRequest, ImageResponse};
 
 // Video types
 pub use video::{
@@ -105,23 +103,16 @@ pub use avatar::{
 
 // Audio types
 pub use audio::{
-    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse,
-    AudioSound, AudioSoundsQuery, AudioSoundsResponse, DialogueRequest,
-    DialogueResponse, DialogueTurn, DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest,
-    ElevenMusicResponse, FinetuneInfo,
-    IsolateVoiceRequest, IsolateRequest,
-    IsolateVoiceResponse, ListFinetunesResponse,
+    AlignRequest, AlignResponse, AlignedWord, AlignmentSegment, AudioResponse, AudioSound,
+    AudioSoundsQuery, AudioSoundsResponse, DialogueRequest, DialogueResponse, DialogueTurn,
+    DubRequest, DubResponse, ElevenMusicClip, ElevenMusicRequest, ElevenMusicResponse,
+    FinetuneInfo, IsolateRequest, IsolateVoiceRequest, IsolateVoiceResponse, ListFinetunesResponse,
     MusicAdvancedClip, MusicAdvancedRequest, MusicAdvancedResponse, MusicClip,
     MusicFinetuneCreateRequest, MusicFinetuneInfo, MusicFinetuneListResponse, MusicRequest,
-    MusicResponse, MusicSection,
-    RemixVoiceRequest, RemixRequest,
-    RemixVoiceResponse, SoundEffectRequest,
-    SoundEffectResponse, SpeechToSpeechRequest, SpeechToSpeechResponse, StarfishTTSRequest,
-    StarfishTTSResponse,
-    SpeechToTextRequest, SttRequest,
-    SpeechToTextResponse, SttResponse,
-    TextToSpeechRequest, TtsRequest,
-    TextToSpeechResponse, TtsResponse,
+    MusicResponse, MusicSection, RemixRequest, RemixVoiceRequest, RemixVoiceResponse,
+    SoundEffectRequest, SoundEffectResponse, SpeechToSpeechRequest, SpeechToSpeechResponse,
+    SpeechToTextRequest, SpeechToTextResponse, StarfishTTSRequest, StarfishTTSResponse, SttRequest,
+    SttResponse, TextToSpeechRequest, TextToSpeechResponse, TtsRequest, TtsResponse,
     VoiceDesignRequest, VoiceDesignResponse, VoicePreview,
 };
 
@@ -185,21 +176,17 @@ pub use embeddings::{EmbedRequest, EmbedResponse};
 
 // Document types
 pub use documents::{
-    ChunkDocumentRequest, ChunkRequest,
-    ChunkDocumentResponse, ChunkResponse,
-    DocumentChunk, DocumentRequest, DocumentResponse,
-    ProcessDocumentRequest, ProcessRequest,
-    ProcessDocumentResponse, ProcessResponse,
+    ChunkDocumentRequest, ChunkDocumentResponse, ChunkRequest, ChunkResponse, DocumentChunk,
+    DocumentRequest, DocumentResponse, ProcessDocumentRequest, ProcessDocumentResponse,
+    ProcessRequest, ProcessResponse,
 };
 
 // RAG types
 pub use rag::{
     Collection, CollectionDocument, CollectionSearchRequest, CollectionSearchResult,
     CollectionUploadResult, CreateCollectionRequest, RagCorpus, RagResult, RagSearchRequest,
-    RagSearchResponse,
-    SurrealRagProviderInfo, SurrealRagProvider,
-    SurrealRagProvidersResponse, SurrealRagResult,
-    SurrealRagSearchRequest, SurrealRagSearchResponse,
+    RagSearchResponse, SurrealRagProvider, SurrealRagProviderInfo, SurrealRagProvidersResponse,
+    SurrealRagResult, SurrealRagSearchRequest, SurrealRagSearchResponse,
 };
 
 // Scraper types
@@ -212,10 +199,10 @@ pub use scraper::{
 pub use search::{
     ContextChunk, ContextOptions, Discussion, DiscussionResult, GoogleSearchCitation,
     GoogleSearchRequest, GoogleSearchResponse, GoogleSearchSupport, Infobox, InfoboxResult,
-    LLMContextResponse, NewsResult, SearchAnswerCitation, SearchAnswerChoice,
-    SearchAnswerMessage, SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk,
-    SearchContextRequest, SearchContextResponse, SearchContextSource, SearchMessage,
-    SearchOptions, VideoResult, WebResult, WebSearchRequest, WebSearchResponse,
+    LLMContextResponse, NewsResult, SearchAnswerChoice, SearchAnswerCitation, SearchAnswerMessage,
+    SearchAnswerRequest, SearchAnswerResponse, SearchContextChunk, SearchContextRequest,
+    SearchContextResponse, SearchContextSource, SearchMessage, SearchOptions, VideoResult,
+    WebResult, WebSearchRequest, WebSearchResponse,
 };
 
 // Model types
@@ -223,8 +210,8 @@ pub use models::{ModelInfo, PricingInfo};
 
 // Realtime voice types
 pub use realtime::{
-    realtime_connect_direct, realtime_connect_direct_to, RealtimeConfig, RealtimeEvent,
-    RealtimeReceiver, RealtimeSender, RealtimeSession, RealtimeSessionResponse,
+    RealtimeConfig, RealtimeEvent, RealtimeReceiver, RealtimeSender, RealtimeSession,
+    RealtimeSessionResponse, realtime_connect_direct, realtime_connect_direct_to,
 };
 
 // Vision types
