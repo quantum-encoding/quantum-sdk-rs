@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::chat::{ChatResponse, ChatTool};
+use crate::chat::{ChatResponse, ChatStream, ChatTool};
 use crate::client::Client;
 use crate::error::Result;
 
@@ -21,7 +21,10 @@ pub struct ContextConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clear_thinking: Option<bool>,
 
-    /// Summarization strategy: "plan_and_tools", "full", "brief".
+    /// Summarization strategy. `"plan_and_tools"` is the only strategy
+    /// the gateway distinguishes (it keeps the plan and tool history in
+    /// the summary); any other value, unset included, gets the default
+    /// summary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summarize_strategy: Option<String>,
 
@@ -106,7 +109,10 @@ pub struct SessionChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_results: Option<Vec<ToolResult>>,
 
-    /// Enable streaming.
+    /// Streaming flag on the wire. The method sets it: [`Client::chat_session`]
+    /// sends `false` and [`Client::chat_session_stream`] sends `true`,
+    /// overwriting whatever is here, so the buffered call never receives
+    /// an SSE body it cannot decode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
 
@@ -160,15 +166,78 @@ pub struct SessionChatResponse {
     pub context: SessionContext,
 }
 
+/// A streaming session turn: the session it belongs to, and the events.
+///
+/// The gateway sends the session id in the `X-QAI-Session-Id` header and
+/// again as the first event (`type: "session"`, see
+/// [`StreamEvent::session`](crate::StreamEvent::session)); then
+/// `content_delta` / `thinking_delta`, a `usage` event and `done`. Tool
+/// calls are not streamed on this route.
+pub struct SessionChatStream {
+    /// The session identifier (newly created when the request had none).
+    pub session_id: String,
+    /// The events, in the same shape as [`Client::chat_stream`].
+    pub events: ChatStream,
+}
+
 impl Client {
-    /// Sends a message within a persistent session.
+    /// Sends a message within a persistent session and waits for the
+    /// whole answer.
     ///
     /// Sessions maintain conversation history server-side with automatic
-    /// context compaction. Omit `session_id` to start a new session.
+    /// context compaction. Omit `session_id` to start a new session. The
+    /// request goes out with `stream: false` whatever the struct says;
+    /// use [`chat_session_stream`](Self::chat_session_stream) to stream.
     pub async fn chat_session(&self, req: &SessionChatRequest) -> Result<SessionChatResponse> {
+        let req = with_stream(req, false);
         let (resp, _meta) = self
-            .post_json::<SessionChatRequest, SessionChatResponse>("/qai/v1/chat/session", req)
+            .post_json::<SessionChatRequest, SessionChatResponse>("/qai/v1/chat/session", &req)
             .await?;
         Ok(resp)
+    }
+
+    /// Sends a message within a persistent session and streams the
+    /// answer. Same route and semantics as
+    /// [`chat_session`](Self::chat_session) with `stream: true`.
+    pub async fn chat_session_stream(&self, req: &SessionChatRequest) -> Result<SessionChatStream> {
+        let req = with_stream(req, true);
+        let (resp, _meta) = self.post_stream_raw("/qai/v1/chat/session", &req).await?;
+        let session_id = resp
+            .headers()
+            .get("X-QAI-Session-Id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        Ok(SessionChatStream {
+            session_id,
+            events: ChatStream::from_response(resp),
+        })
+    }
+}
+
+/// The request as the method sends it: the streaming flag belongs to the
+/// method, not the caller, so a buffered call can never be answered with
+/// an SSE body it cannot decode.
+fn with_stream(req: &SessionChatRequest, stream: bool) -> SessionChatRequest {
+    let mut req = req.clone();
+    req.stream = Some(stream);
+    req
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_method_owns_the_stream_flag() {
+        let req = SessionChatRequest {
+            message: "hi".into(),
+            stream: Some(true),
+            ..Default::default()
+        };
+        let buffered = serde_json::to_value(with_stream(&req, false)).unwrap();
+        assert_eq!(buffered["stream"], serde_json::Value::Bool(false));
+        let streamed = serde_json::to_value(with_stream(&req, true)).unwrap();
+        assert_eq!(streamed["stream"], serde_json::Value::Bool(true));
     }
 }

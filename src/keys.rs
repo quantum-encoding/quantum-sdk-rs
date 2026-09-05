@@ -257,6 +257,11 @@ pub struct PartnerKeyResponse {
 
 impl Client {
     /// Creates a new API key with optional scope and spend restrictions.
+    ///
+    /// The gateway does not dedupe key minting, so the request is never
+    /// replayed on a 502/503/504: if one masks a completed mint, the key
+    /// exists but its secret was never delivered — list keys and revoke
+    /// it rather than minting again blindly.
     pub async fn create_key(&self, req: &CreateKeyRequest) -> Result<CreateKeyResponse> {
         let (resp, _meta) = self
             .post_json::<CreateKeyRequest, CreateKeyResponse>("/qai/v1/keys", req)
@@ -287,6 +292,11 @@ impl Client {
 
     /// Rotates a key: mints a replacement and keeps the old one working for
     /// `grace_seconds` so deployed clients can pick the new one up.
+    ///
+    /// Never replayed on a 5xx: a second rotate of an already-rotated id
+    /// is a 409 `invalid_state`, and the only copy of the new secret was
+    /// in the lost response. On a 502/503/504 here, treat the rotation
+    /// as possibly done, list keys, and rotate the *new* id if you must.
     pub async fn rotate_key(&self, id: &str, req: &RotateKeyRequest) -> Result<RotateKeyResponse> {
         let path = format!("/qai/v1/keys/{id}/rotate");
         let (resp, _meta) = self
@@ -303,6 +313,11 @@ impl Client {
     }
 
     /// Mints a short-lived token for a browser or device.
+    ///
+    /// Only accounts on the `internal` developer tier (and admins) may
+    /// call this; any other account gets a 403 `forbidden` before the
+    /// body is read. Single attempt: a replay could mint a second token
+    /// whose secret nobody received.
     pub async fn create_ephemeral_key(
         &self,
         req: &EphemeralKeyRequest,
@@ -314,6 +329,10 @@ impl Client {
     }
 
     /// Mints a key on behalf of a partner app's end user.
+    ///
+    /// Only accounts on the `internal` developer tier (and admins) may
+    /// call this; any other account gets a 403 `forbidden` before the
+    /// body is read. Single attempt, like every key-minting call.
     pub async fn create_partner_key(&self, req: &PartnerKeyRequest) -> Result<PartnerKeyResponse> {
         let (resp, _meta) = self
             .post_json::<PartnerKeyRequest, PartnerKeyResponse>("/qai/v1/keys/partner", req)

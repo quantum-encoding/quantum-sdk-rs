@@ -9,14 +9,36 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
 use crate::region::Region;
 
-/// Max retries for transient errors (429, 502, 503, 504).
+/// How many times one request may be replayed after its first attempt.
 const MAX_RETRIES: u32 = 3;
-/// Initial backoff delay.
+/// Backoff before the first replay; doubles on each further replay.
 const INITIAL_BACKOFF_MS: u64 = 500;
+/// Longest `Retry-After` the SDK honours. A larger value is clamped so a
+/// misbehaving server cannot park a caller indefinitely.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
 
-/// Check if a status code is retryable.
-fn is_retryable(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 429 | 502 | 503 | 504)
+/// Which responses a request may be replayed on.
+///
+/// The gateway bills chat, session chat and every media route through a
+/// reserve→settle rail that never reads `Idempotency-Key`, and key-minting
+/// and Stripe checkout routes have no dedupe at all. Replaying such a POST
+/// after a 502/503/504 that masked a completed operation runs it — and
+/// charges for it — again. So a POST is replayed on 429 only, unless the
+/// caller opted in with a key on a route that honours it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Replay {
+    /// Replay on 429 only. A 429 is answered before any provider call or
+    /// charge, so replaying it can never duplicate work.
+    RateLimitOnly,
+    /// Replay on 429, 502, 503 and 504.
+    Transient,
+}
+
+fn is_retryable(status: reqwest::StatusCode, replay: Replay) -> bool {
+    match replay {
+        Replay::RateLimitOnly => status.as_u16() == 429,
+        Replay::Transient => matches!(status.as_u16(), 429 | 502 | 503 | 504),
+    }
 }
 
 /// Check if an error response body contains a permanent (non-retryable) error
@@ -31,6 +53,27 @@ fn is_permanent_error(body: &str) -> bool {
         || (lower.contains("status 400") && lower.contains("rejected"))
 }
 
+/// The `Retry-After` delay a response asks for, when it carries one in
+/// the delay-seconds form the gateway uses (it sends `5` per credential
+/// and `10` per IP). The HTTP-date form is not parsed. Clamped to
+/// [`MAX_RETRY_AFTER`].
+fn retry_after(headers: &HeaderMap) -> Option<Duration> {
+    let secs: u64 = headers
+        .get("Retry-After")?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(Duration::from_secs(secs).min(MAX_RETRY_AFTER))
+}
+
+/// Delay before replay number `attempt` (1-based) when the response
+/// carried no usable `Retry-After`.
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(INITIAL_BACKOFF_MS * 2u64.pow(attempt.saturating_sub(1)))
+}
+
 /// The default Quantum AI API base URL.
 pub const DEFAULT_BASE_URL: &str = "https://api.quantumencoding.ai";
 
@@ -40,14 +83,20 @@ pub const TICKS_PER_USD: i64 = 10_000_000_000;
 /// Common response metadata parsed from HTTP headers.
 #[derive(Debug, Clone, Default)]
 pub struct ResponseMeta {
-    /// Cost in ticks from X-QAI-Cost-Ticks header.
+    /// Cost in ticks from the `X-QAI-Cost-Ticks` header. Zero when the
+    /// route sends no cost header — a semantic-cache hit on chat, or a
+    /// route that does not bill.
     pub cost_ticks: i64,
-    /// Post-deduction credit balance in ticks from X-QAI-Balance-After header.
-    /// Zero if the server didn't include the header (e.g. cached / free calls).
+    /// Post-deduction credit balance in ticks from the
+    /// `X-QAI-Balance-After` header. Only the media routes (image, video,
+    /// audio, avatar) send it; on chat, session chat, search, keys,
+    /// credits and account calls this is always zero. Use
+    /// `credit_balance` / `account_balance` for the balance after a chat.
     pub balance_after: i64,
-    /// Request identifier from X-QAI-Request-Id header.
+    /// Request identifier from the `X-QAI-Request-Id` header, set on every
+    /// response.
     pub request_id: String,
-    /// Model identifier from X-QAI-Model header.
+    /// Model identifier from the `X-QAI-Model` header (chat routes).
     pub model: String,
 }
 
@@ -73,6 +122,17 @@ fn invalid_header_error(message: String) -> Error {
         status_code: 0,
         code: "invalid_header".to_string(),
         message,
+        request_id: String::new(),
+    })
+}
+
+fn invalid_api_key_error() -> Error {
+    Error::Api(ApiError {
+        status_code: 0,
+        code: "invalid_api_key".to_string(),
+        message: "API key contains characters not allowed in an HTTP header \
+                  (a trailing newline read from a file is the usual cause)"
+            .to_string(),
         request_id: String::new(),
     })
 }
@@ -157,16 +217,15 @@ impl ClientBuilder {
     }
 
     /// Builds the [`Client`].
+    ///
+    /// Fails with an `invalid_api_key` error when the key cannot be sent as
+    /// a header value, and with `invalid_header` when a caller-supplied
+    /// header is reserved or malformed.
     pub fn build(self) -> Result<Client> {
-        let auth_value = format!("Bearer {}", self.api_key);
-        let auth_header = HeaderValue::from_str(&auth_value).map_err(|_| {
-            Error::Api(ApiError {
-                status_code: 0,
-                code: "invalid_api_key".to_string(),
-                message: "API key contains invalid header characters".to_string(),
-                request_id: String::new(),
-            })
-        })?;
+        let auth_header = HeaderValue::from_str(&format!("Bearer {}", self.api_key))
+            .map_err(|_| invalid_api_key_error())?;
+        let key_header =
+            HeaderValue::from_str(&self.api_key).map_err(|_| invalid_api_key_error())?;
 
         // Resolve caller-supplied headers, with app() winning over any
         // duplicate extra_header("X-Quantum-App", ...).
@@ -195,10 +254,9 @@ impl ClientBuilder {
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header.clone());
         // X-API-Key duplicates the credential for proxies that consume the
-        // Authorization header before it reaches the gateway.
-        if let Ok(v) = HeaderValue::from_str(&self.api_key) {
-            headers.insert("X-API-Key", v);
-        }
+        // Authorization header before it reaches the gateway. The gateway
+        // reads X-API-Key first and falls back to the bearer.
+        headers.insert("X-API-Key", key_header);
         // Caller-supplied headers are inserted *after* auth so the reserved
         // guard above is the only way to override standard SDK headers.
         for (name, value) in &extra_headers_map {
@@ -206,16 +264,21 @@ impl ClientBuilder {
         }
 
         let http = reqwest::Client::builder()
-            .default_headers(headers)
+            .default_headers(headers.clone())
             .timeout(self.timeout)
+            .build()?;
+        // Same credential and caller headers, no timeout: an SSE stream is
+        // open for as long as the model talks, and cancellation is drop.
+        let stream_http = reqwest::Client::builder()
+            .default_headers(headers)
             .build()?;
 
         Ok(Client {
             inner: Arc::new(ClientInner {
                 base_url: self.base_url,
                 http,
+                stream_http,
                 auth_header,
-                extra_headers: extra_headers_map,
                 region: self.region,
             }),
         })
@@ -224,17 +287,16 @@ impl ClientBuilder {
 
 struct ClientInner {
     base_url: String,
+    /// Non-streaming client: credential headers, caller headers, timeout.
     http: reqwest::Client,
+    /// Streaming client: the same default headers, no timeout. Built once
+    /// so streams share a connection pool instead of a fresh TLS handshake
+    /// per call.
+    stream_http: reqwest::Client,
     auth_header: HeaderValue,
     /// Client-level routing region applied to chat requests (see
     /// [`ClientBuilder::region`]).
     region: Option<Region>,
-    /// Caller-supplied headers (via `ClientBuilder::extra_header` /
-    /// `ClientBuilder::app`). Already merged into the non-streaming
-    /// client's `default_headers`; the streaming paths build fresh
-    /// `reqwest::Client`s without defaults and must apply these
-    /// per-request.
-    extra_headers: HeaderMap,
 }
 
 /// The Quantum AI API client.
@@ -244,7 +306,10 @@ struct ClientInner {
 /// # Example
 ///
 /// ```no_run
-/// let client = quantum_sdk::Client::new("qai_key_xxx");
+/// # fn example() -> quantum_sdk::Result<()> {
+/// let client = quantum_sdk::Client::new("qai_key_xxx")?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone)]
 pub struct Client {
@@ -253,10 +318,12 @@ pub struct Client {
 
 impl Client {
     /// Creates a new client with the given API key and default settings.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        ClientBuilder::new(api_key)
-            .build()
-            .expect("default client configuration is valid")
+    ///
+    /// Fails with an `invalid_api_key` error when the key cannot be sent
+    /// as an HTTP header value — a trailing newline read from a file is
+    /// the usual cause. Equivalent to `Client::builder(key).build()`.
+    pub fn new(api_key: impl Into<String>) -> Result<Self> {
+        ClientBuilder::new(api_key).build()
     }
 
     /// Returns a [`ClientBuilder`] for custom configuration.
@@ -288,11 +355,65 @@ impl Client {
         &self.inner.http
     }
 
+    /// Sends a request, replaying it per `replay`, and returns the first
+    /// 2xx response. A non-2xx that is not replayable — or the last
+    /// replay's failure — comes back as [`Error::Api`].
+    ///
+    /// `build` produces a fresh request for every attempt.
+    async fn send_retrying<F>(
+        &self,
+        build: F,
+        replay: Replay,
+    ) -> Result<(reqwest::Response, ResponseMeta)>
+    where
+        F: Fn() -> reqwest::RequestBuilder,
+    {
+        let mut attempt = 0;
+        loop {
+            let resp = build().send().await?;
+            let status = resp.status();
+            let meta = parse_response_meta(&resp);
+
+            if status.is_success() {
+                return Ok((resp, meta));
+            }
+            if !is_retryable(status, replay) || attempt >= MAX_RETRIES {
+                return Err(parse_api_error(resp, &meta.request_id).await);
+            }
+
+            let asked = retry_after(resp.headers());
+            let body_text = resp.text().await.unwrap_or_default();
+            if is_permanent_error(&body_text) {
+                return Err(parse_api_error_from_text(
+                    status,
+                    &body_text,
+                    &meta.request_id,
+                ));
+            }
+
+            attempt += 1;
+            tokio::time::sleep(asked.unwrap_or_else(|| backoff(attempt))).await;
+        }
+    }
+
     /// Sends a JSON POST request and deserializes the response.
     ///
-    /// An `Idempotency-Key` header is automatically generated and reused across
-    /// retries, preventing duplicate charges when a 502/504 masks a successful
-    /// backend operation.
+    /// # Retries
+    ///
+    /// The request is replayed only on 429, waiting for the response's
+    /// `Retry-After` when it carries one (the gateway sends 5 s per
+    /// credential, 10 s per IP) and 0.5 s / 1 s / 2 s otherwise, up to
+    /// three times. A 502, 503 or 504 is returned as an error, never
+    /// replayed: the gateway bills chat, session chat and every media
+    /// route through a reserve→settle rail that does not read
+    /// `Idempotency-Key`, and key-minting and Stripe checkout routes have
+    /// no dedupe at all, so a replay after a 5xx that masked a completed
+    /// operation would run — and charge for — it a second time. To opt
+    /// into 5xx replay on a route that does dedupe, see
+    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency).
+    ///
+    /// A random `Idempotency-Key` is sent and reused across the 429
+    /// replays so routes that dedupe see one logical request.
     pub async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -302,19 +423,26 @@ impl Client {
     }
 
     /// Like [`post_json`](Self::post_json) but with a caller-supplied
-    /// idempotency key.
+    /// idempotency key, which also opts the request into replay on
+    /// 502/503/504.
     ///
-    /// When `idempotency_key` is `Some`, that value is sent as the
-    /// `Idempotency-Key` header on every retry attempt (the backend
-    /// deduplicates on it). When `None`, a random UUID is generated
-    /// per call — matching the default [`post_json`](Self::post_json)
-    /// behavior.
+    /// # What the gateway does with the key
     ///
-    /// Pass a deterministic key for fan-out / queue / retry scenarios
-    /// where the same logical request may be issued by multiple workers
-    /// (or re-issued after a crash) and must not create duplicate
-    /// charges. The key is reused across retries so a transient 502/504
-    /// masking a successful backend operation won't double-charge.
+    /// Only routes billed through the gateway's `DeductAndTrack` rail read
+    /// `Idempotency-Key`: agent, batch, jobs, search, scanner, rag,
+    /// documents, vision, voice, compute and deployments, inference,
+    /// missions, cloudrun and security. On those the billing result is
+    /// cached for 24 hours under (key, account) — the request body is not
+    /// part of the cache key, so a key reused for a *different* payload
+    /// returns the first request's billing result while the provider still
+    /// runs. Use one key per logical request, never per worker.
+    ///
+    /// The key is ignored on `/chat`, `/chat/session`, `/chat/estimate`,
+    /// every image, video, audio and avatar route, and on keys, credits,
+    /// auth and account. Pass `Some` on those only if a duplicate charge
+    /// (or a duplicate key / checkout session) after a masked success is
+    /// acceptable to you. With `None` the behaviour is exactly
+    /// [`post_json`](Self::post_json): 429 only.
     pub async fn post_json_with_idempotency<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -323,72 +451,27 @@ impl Client {
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
         let body_bytes = serde_json::to_vec(body)?;
-        // Caller key wins; otherwise generate one. Either way the same
-        // key is reused across retries so the backend deduplicates.
-        let idempotency_key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let replay = if idempotency_key.is_some() {
+            Replay::Transient
+        } else {
+            Replay::RateLimitOnly
+        };
+        let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        let mut last_err = None;
-        for attempt in 0..=MAX_RETRIES {
-            if attempt > 0 {
-                let delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
-                eprintln!("[sdk] Retry {attempt}/{MAX_RETRIES} for POST {path} in {delay}ms");
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-            }
-
-            let resp = self
-                .inner
-                .http
-                .post(&url)
-                .header(CONTENT_TYPE, "application/json")
-                .header("Idempotency-Key", &idempotency_key)
-                .body(body_bytes.clone())
-                .send()
-                .await?;
-
-            let status = resp.status();
-            let meta = parse_response_meta(&resp);
-
-            if status.is_success() {
-                let body_text = resp.text().await?;
-                let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-                    let preview = if body_text.len() > 300 {
-                        &body_text[..300]
-                    } else {
-                        &body_text
-                    };
-                    eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
-                    e
-                })?;
-                return Ok((result, meta));
-            }
-
-            if is_retryable(status) && attempt < MAX_RETRIES {
-                // Read body to check if it's a permanent error wrapped in 502
-                let body_text = resp.text().await.unwrap_or_default();
-                if is_permanent_error(&body_text) {
-                    eprintln!(
-                        "[sdk] POST {path} returned {status} but error is permanent, not retrying"
-                    );
-                    let err = parse_api_error_from_text(status, &body_text, &meta.request_id);
-                    return Err(err);
-                }
-                eprintln!("[sdk] POST {path} returned {status}, will retry");
-                let err = parse_api_error_from_text(status, &body_text, &meta.request_id);
-                last_err = Some(err);
-                continue;
-            }
-
-            return Err(parse_api_error(resp, &meta.request_id).await);
-        }
-
-        Err(last_err.unwrap_or_else(|| {
-            Error::Api(ApiError {
-                status_code: 502,
-                code: "retry_exhausted".into(),
-                message: format!("max retries ({MAX_RETRIES}) exceeded"),
-                request_id: String::new(),
-            })
-        }))
+        let (resp, meta) = self
+            .send_retrying(
+                || {
+                    self.inner
+                        .http
+                        .post(&url)
+                        .header(CONTENT_TYPE, "application/json")
+                        .header("Idempotency-Key", &key)
+                        .body(body_bytes.clone())
+                },
+                replay,
+            )
+            .await?;
+        Ok((decode_json(resp).await?, meta))
     }
 
     /// Sends a POST request and returns the raw JSON response.
@@ -404,73 +487,23 @@ impl Client {
     }
 
     /// Sends a GET request and deserializes the response.
+    ///
+    /// A GET is replayed on 429 (honouring `Retry-After`), 502, 503 and
+    /// 504, up to three times: reads bill nothing, so a replay cannot
+    /// duplicate a charge.
     pub async fn get_json<Resp: DeserializeOwned>(
         &self,
         path: &str,
     ) -> Result<(Resp, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-
-        let mut last_err = None;
-        for attempt in 0..=MAX_RETRIES {
-            if attempt > 0 {
-                let delay = INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1);
-                eprintln!("[sdk] Retry {attempt}/{MAX_RETRIES} for GET {path} in {delay}ms");
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-            }
-
-            let resp = self.inner.http.get(&url).send().await?;
-            let status = resp.status();
-            let meta = parse_response_meta(&resp);
-
-            if status.is_success() {
-                let body_text = resp.text().await?;
-                let result: Resp = serde_json::from_str(&body_text).map_err(|e| {
-                    let preview = if body_text.len() > 300 {
-                        &body_text[..300]
-                    } else {
-                        &body_text
-                    };
-                    eprintln!("[sdk] JSON decode error on {path}: {e}\n  body preview: {preview}");
-                    e
-                })?;
-                return Ok((result, meta));
-            }
-
-            if is_retryable(status) && attempt < MAX_RETRIES {
-                let body_text = resp.text().await.unwrap_or_default();
-                if is_permanent_error(&body_text) {
-                    eprintln!(
-                        "[sdk] GET {path} returned {status} but error is permanent, not retrying"
-                    );
-                    return Err(parse_api_error_from_text(
-                        status,
-                        &body_text,
-                        &meta.request_id,
-                    ));
-                }
-                eprintln!("[sdk] GET {path} returned {status}, will retry");
-                last_err = Some(parse_api_error_from_text(
-                    status,
-                    &body_text,
-                    &meta.request_id,
-                ));
-                continue;
-            }
-
-            return Err(parse_api_error(resp, &meta.request_id).await);
-        }
-
-        Err(last_err.unwrap_or_else(|| {
-            Error::Api(ApiError {
-                status_code: 502,
-                code: "retry_exhausted".into(),
-                message: format!("max retries ({MAX_RETRIES}) exceeded"),
-                request_id: String::new(),
-            })
-        }))
+        let (resp, meta) = self
+            .send_retrying(|| self.inner.http.get(&url), Replay::Transient)
+            .await?;
+        Ok((decode_json(resp).await?, meta))
     }
 
-    /// Sends a DELETE request and deserializes the response.
+    /// Sends a DELETE request and deserializes the response. Single
+    /// attempt.
     pub async fn delete_json<Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -484,11 +517,11 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let result: Resp = resp.json().await?;
-        Ok((result, meta))
+        Ok((decode_json(resp).await?, meta))
     }
 
-    /// Sends a POST request with an empty body and deserializes the response.
+    /// Sends a POST request with an empty body and deserializes the
+    /// response. Same retry policy as [`post_json`](Self::post_json).
     pub async fn post_json_empty<Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -499,35 +532,18 @@ impl Client {
     /// Like [`post_json_empty`](Self::post_json_empty) but with a
     /// caller-supplied idempotency key. See
     /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
-    /// for the rationale.
+    /// for which routes honour it and what opting in means.
     pub async fn post_json_empty_with_idempotency<Resp: DeserializeOwned>(
         &self,
         path: &str,
         idempotency_key: Option<String>,
     ) -> Result<(Resp, ResponseMeta)> {
-        let url = format!("{}{}", self.inner.base_url, path);
-        let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let resp = self
-            .inner
-            .http
-            .post(&url)
-            .header("content-type", "application/json")
-            .header("Idempotency-Key", key)
-            .body("{}")
-            .send()
-            .await?;
-
-        let meta = parse_response_meta(&resp);
-
-        if !resp.status().is_success() {
-            return Err(parse_api_error(resp, &meta.request_id).await);
-        }
-
-        let result: Resp = resp.json().await?;
-        Ok((result, meta))
+        self.post_json_with_idempotency(path, &serde_json::json!({}), idempotency_key)
+            .await
     }
 
     /// Sends a PUT request with a JSON body and deserializes the response.
+    /// Single attempt.
     pub async fn put_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -542,11 +558,11 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let result: Resp = resp.json().await?;
-        Ok((result, meta))
+        Ok((decode_json(resp).await?, meta))
     }
 
     /// Sends a multipart POST request and deserializes the response.
+    /// Single attempt: a multipart body cannot be replayed.
     pub async fn post_multipart<Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -558,7 +574,8 @@ impl Client {
     /// Like [`post_multipart`](Self::post_multipart) but with a
     /// caller-supplied idempotency key. See
     /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
-    /// for the rationale.
+    /// for which routes honour it. The request is still single attempt;
+    /// the key lets a route that dedupes recognise a re-issued upload.
     pub async fn post_multipart_with_idempotency<Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -582,26 +599,23 @@ impl Client {
             return Err(parse_api_error(resp, &meta.request_id).await);
         }
 
-        let result: Resp = resp.json().await?;
-        Ok((result, meta))
+        Ok((decode_json(resp).await?, meta))
     }
 
     /// Sends a GET request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
-    /// Uses a separate client without timeout — cancellation is via drop.
+    /// Uses the shared no-timeout streaming client, which carries the same
+    /// credential and caller headers as every other request; cancellation
+    /// is via drop. Single attempt.
     pub async fn get_stream_raw(&self, path: &str) -> Result<(reqwest::Response, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-
-        let stream_client = reqwest::Client::builder().build()?;
-
-        let mut req = stream_client
+        let resp = self
+            .inner
+            .stream_http
             .get(&url)
-            .header(AUTHORIZATION, self.inner.auth_header.clone())
-            .header("Accept", "text/event-stream");
-        for (name, value) in &self.inner.extra_headers {
-            req = req.header(name, value);
-        }
-        let resp = req.send().await?;
+            .header("Accept", "text/event-stream")
+            .send()
+            .await?;
 
         let meta = parse_response_meta(&resp);
 
@@ -614,7 +628,9 @@ impl Client {
 
     /// Sends a JSON POST request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
-    /// Uses a separate client without timeout — cancellation is via drop.
+    /// Uses the shared no-timeout streaming client, which carries the same
+    /// credential and caller headers as every other request; cancellation
+    /// is via drop. Single attempt.
     pub async fn post_stream_raw(
         &self,
         path: &str,
@@ -625,11 +641,10 @@ impl Client {
     }
 
     /// Like [`post_stream_raw`](Self::post_stream_raw) but with a
-    /// caller-supplied idempotency key. See
-    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency)
-    /// for the rationale. Streaming requests are single-attempt (no
-    /// retry), but the key still lets the backend deduplicate a
-    /// re-issued stream request after a client crash or reconnect.
+    /// caller-supplied idempotency key. Streaming requests are single
+    /// attempt; the key only matters on the routes listed under
+    /// [`post_json_with_idempotency`](Self::post_json_with_idempotency),
+    /// and the streaming chat routes are not among them.
     pub async fn post_stream_raw_with_idempotency(
         &self,
         path: &str,
@@ -637,21 +652,17 @@ impl Client {
         idempotency_key: Option<String>,
     ) -> Result<(reqwest::Response, ResponseMeta)> {
         let url = format!("{}{}", self.inner.base_url, path);
-
-        // Build a client without timeout for streaming.
-        let stream_client = reqwest::Client::builder().build()?;
-
         let key = idempotency_key.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let mut req = stream_client
+        let resp = self
+            .inner
+            .stream_http
             .post(&url)
-            .header(AUTHORIZATION, self.inner.auth_header.clone())
             .header(CONTENT_TYPE, "application/json")
             .header("Accept", "text/event-stream")
-            .header("Idempotency-Key", key);
-        for (name, value) in &self.inner.extra_headers {
-            req = req.header(name, value);
-        }
-        let resp = req.json(body).send().await?;
+            .header("Idempotency-Key", key)
+            .json(body)
+            .send()
+            .await?;
 
         let meta = parse_response_meta(&resp);
 
@@ -661,6 +672,15 @@ impl Client {
 
         Ok((resp, meta))
     }
+}
+
+/// Decodes a 2xx body as JSON. A decode failure is [`Error::Json`] and
+/// carries only serde's position, never the body: sign-in and key-minting
+/// responses open with live credentials, and library code must not copy
+/// those into an error message or a log.
+async fn decode_json<Resp: DeserializeOwned>(resp: reqwest::Response) -> Result<Resp> {
+    let bytes = resp.bytes().await?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 /// Extracts response metadata from HTTP headers.
@@ -697,39 +717,9 @@ fn parse_response_meta(resp: &reqwest::Response) -> ResponseMeta {
 
 /// Parses an API error from a non-2xx response.
 pub(crate) async fn parse_api_error(resp: reqwest::Response, request_id: &str) -> Error {
-    let status_code = resp.status().as_u16();
-    let status_text = resp
-        .status()
-        .canonical_reason()
-        .unwrap_or("Unknown")
-        .to_string();
-
+    let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
-
-    let (code, message) = if let Ok(err_body) = serde_json::from_str::<ApiErrorBody>(&body) {
-        let msg = if err_body.error.message.is_empty() {
-            body.clone()
-        } else {
-            err_body.error.message
-        };
-        let c = if !err_body.error.code.is_empty() {
-            err_body.error.code
-        } else if !err_body.error.error_type.is_empty() {
-            err_body.error.error_type
-        } else {
-            status_text
-        };
-        (c, msg)
-    } else {
-        (status_text, body)
-    };
-
-    Error::Api(ApiError {
-        status_code,
-        code,
-        message,
-        request_id: request_id.to_string(),
-    })
+    parse_api_error_from_text(status, &body, request_id)
 }
 
 fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id: &str) -> Error {
@@ -765,6 +755,321 @@ fn parse_api_error_from_text(status: reqwest::StatusCode, body: &str, request_id
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    /// One request as the mock saw it. Header names are lowercased.
+    struct Recorded {
+        method: String,
+        path: String,
+        headers: Vec<(String, String)>,
+    }
+
+    impl Recorded {
+        fn header(&self, name: &str) -> Option<&str> {
+            self.headers
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        }
+    }
+
+    struct Canned {
+        status: u16,
+        reason: &'static str,
+        headers: Vec<(&'static str, String)>,
+        body: String,
+    }
+
+    fn canned(status: u16, reason: &'static str, body: &str) -> Canned {
+        Canned {
+            status,
+            reason,
+            headers: Vec::new(),
+            body: body.to_string(),
+        }
+    }
+
+    /// A one-thread HTTP/1.1 server that answers each connection with the
+    /// next scripted response and records what it was asked. Every
+    /// response closes the connection so a replay is a new accept.
+    struct MockServer {
+        base_url: String,
+        requests: Arc<Mutex<Vec<Recorded>>>,
+    }
+
+    impl MockServer {
+        fn start(script: Vec<Canned>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let recorded = Arc::clone(&requests);
+            std::thread::spawn(move || {
+                for reply in script {
+                    let Ok((mut stream, _)) = listener.accept() else {
+                        return;
+                    };
+                    let req = read_request(&mut stream);
+                    recorded.lock().unwrap().push(req);
+                    let mut head = format!(
+                        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                        reply.status,
+                        reply.reason,
+                        reply.body.len()
+                    );
+                    for (name, value) in &reply.headers {
+                        head.push_str(&format!("{name}: {value}\r\n"));
+                    }
+                    head.push_str("\r\n");
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(reply.body.as_bytes());
+                    let _ = stream.flush();
+                }
+            });
+            Self { base_url, requests }
+        }
+
+        fn client(&self) -> Client {
+            Client::builder("qai_k_test")
+                .base_url(&self.base_url)
+                .app("recipe-box")
+                .extra_header("X-Correlation-Id", "abc-123")
+                .build()
+                .unwrap()
+        }
+
+        fn requests(&self) -> Vec<Recorded> {
+            std::mem::take(&mut *self.requests.lock().unwrap())
+        }
+    }
+
+    fn read_request(stream: &mut std::net::TcpStream) -> Recorded {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let head_end = loop {
+            let n = stream.read(&mut chunk).expect("read request");
+            if n == 0 {
+                panic!("connection closed before the request head ended");
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
+        let mut lines = head.lines();
+        let request_line = lines.next().unwrap_or_default();
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or_default().to_string();
+        let path = parts.next().unwrap_or_default().to_string();
+        let headers: Vec<(String, String)> = lines
+            .filter_map(|l| l.split_once(':'))
+            .map(|(n, v)| (n.trim().to_ascii_lowercase(), v.trim().to_string()))
+            .collect();
+        let content_length: usize = headers
+            .iter()
+            .find(|(n, _)| n == "content-length")
+            .and_then(|(_, v)| v.parse().ok())
+            .unwrap_or(0);
+        let mut body = buf[head_end..].to_vec();
+        while body.len() < content_length {
+            let n = stream.read(&mut chunk).expect("read body");
+            if n == 0 {
+                break;
+            }
+            body.extend_from_slice(&chunk[..n]);
+        }
+        Recorded {
+            method,
+            path,
+            headers,
+        }
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    struct OkBody {
+        ok: bool,
+    }
+
+    fn api_status(err: &Error) -> u16 {
+        match err {
+            Error::Api(e) => e.status_code,
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_post_answered_502_is_not_replayed() {
+        let server = MockServer::start(vec![canned(
+            502,
+            "Bad Gateway",
+            r#"{"error":{"message":"upstream","type":"provider_error"}}"#,
+        )]);
+        let err = server
+            .client()
+            .post_json::<_, OkBody>("/qai/v1/chat", &serde_json::json!({"model": "m"}))
+            .await
+            .unwrap_err();
+        assert_eq!(api_status(&err), 502);
+        let seen = server.requests();
+        assert_eq!(
+            seen.len(),
+            1,
+            "a 502 on a POST must reach the caller unreplayed"
+        );
+        assert_eq!(seen[0].method, "POST");
+        assert_eq!(seen[0].path, "/qai/v1/chat");
+    }
+
+    #[tokio::test]
+    async fn a_post_answered_429_waits_for_retry_after_then_replays() {
+        let mut limited = canned(
+            429,
+            "Too Many Requests",
+            r#"{"error":{"message":"slow down","type":"rate_limit_exceeded","code":"RATE_LIMITED_PER_KEY"}}"#,
+        );
+        limited.headers.push(("Retry-After", "1".to_string()));
+        let server = MockServer::start(vec![limited, canned(200, "OK", r#"{"ok":true}"#)]);
+
+        let started = Instant::now();
+        let (resp, _meta) = server
+            .client()
+            .post_json::<_, OkBody>("/qai/v1/chat", &serde_json::json!({}))
+            .await
+            .unwrap();
+        assert!(resp.ok);
+        assert!(
+            started.elapsed() >= Duration::from_secs(1),
+            "must wait the server's Retry-After before replaying"
+        );
+        let seen = server.requests();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(
+            seen[0].header("idempotency-key"),
+            seen[1].header("idempotency-key"),
+            "the replay carries the same Idempotency-Key"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_explicit_idempotency_key_opts_a_post_into_5xx_replay() {
+        let server = MockServer::start(vec![
+            canned(503, "Service Unavailable", "busy"),
+            canned(200, "OK", r#"{"ok":true}"#),
+        ]);
+        let (resp, _meta) = server
+            .client()
+            .post_json_with_idempotency::<_, OkBody>(
+                "/qai/v1/search",
+                &serde_json::json!({}),
+                Some("job-42".to_string()),
+            )
+            .await
+            .unwrap();
+        assert!(resp.ok);
+        let seen = server.requests();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].header("idempotency-key"), Some("job-42"));
+        assert_eq!(seen[1].header("idempotency-key"), Some("job-42"));
+    }
+
+    #[tokio::test]
+    async fn a_get_answered_503_is_replayed() {
+        let server = MockServer::start(vec![
+            canned(503, "Service Unavailable", "busy"),
+            canned(200, "OK", r#"{"ok":true}"#),
+        ]);
+        let (resp, _meta) = server
+            .client()
+            .get_json::<OkBody>("/qai/v1/models")
+            .await
+            .unwrap();
+        assert!(resp.ok);
+        assert_eq!(server.requests().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_5xx_wrapping_a_permanent_error_is_not_replayed_on_get() {
+        let server = MockServer::start(vec![canned(
+            502,
+            "Bad Gateway",
+            r#"{"error":{"message":"content moderation blocked this","type":"provider_error"}}"#,
+        )]);
+        let err = server
+            .client()
+            .get_json::<OkBody>("/qai/v1/models")
+            .await
+            .unwrap_err();
+        assert_eq!(api_status(&err), 502);
+        assert_eq!(server.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn streaming_sends_the_same_headers_as_every_other_request() {
+        let mut sse = canned(200, "OK", "data: [DONE]\n\n");
+        sse.headers
+            .push(("Content-Type", "text/event-stream".to_string()));
+        let server = MockServer::start(vec![sse]);
+        let (_resp, _meta) = server
+            .client()
+            .post_stream_raw("/qai/v1/chat", &serde_json::json!({"stream": true}))
+            .await
+            .unwrap();
+        let seen = server.requests();
+        let req = &seen[0];
+        assert_eq!(req.header("authorization"), Some("Bearer qai_k_test"));
+        assert_eq!(req.header("x-api-key"), Some("qai_k_test"));
+        assert_eq!(req.header("x-quantum-app"), Some("recipe-box"));
+        assert_eq!(req.header("x-correlation-id"), Some("abc-123"));
+        assert_eq!(req.header("accept"), Some("text/event-stream"));
+    }
+
+    #[tokio::test]
+    async fn a_decode_failure_never_carries_the_body() {
+        let server = MockServer::start(vec![canned(
+            200,
+            "OK",
+            r#"{"token":"qai_s_LIVE_SESSION","user":42}"#,
+        )]);
+        let err = server
+            .client()
+            .post_json::<_, OkBody>("/qai/v1/auth/google", &serde_json::json!({}))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Json(_)), "got {err:?}");
+        let shown = format!("{err} / {err:?}");
+        assert!(
+            !shown.contains("LIVE_SESSION"),
+            "a decode error must not echo the response body: {shown}"
+        );
+    }
+
+    #[test]
+    fn retry_after_reads_delay_seconds_and_clamps() {
+        let mut h = HeaderMap::new();
+        assert_eq!(retry_after(&h), None);
+        h.insert("Retry-After", HeaderValue::from_static("5"));
+        assert_eq!(retry_after(&h), Some(Duration::from_secs(5)));
+        h.insert("Retry-After", HeaderValue::from_static("86400"));
+        assert_eq!(retry_after(&h), Some(MAX_RETRY_AFTER));
+        h.insert(
+            "Retry-After",
+            HeaderValue::from_static("Wed, 21 Oct 2026 07:28:00 GMT"),
+        );
+        assert_eq!(retry_after(&h), None, "the HTTP-date form is not parsed");
+    }
+
+    #[test]
+    fn a_bad_key_is_an_error_not_a_panic() {
+        match Client::new("qai_k_from_a_file\n") {
+            Err(Error::Api(api)) => assert_eq!(api.code, "invalid_api_key"),
+            Ok(_) => panic!("a key with a newline cannot be a header value"),
+            Err(other) => panic!("unexpected error variant: {other:?}"),
+        }
+    }
 
     #[test]
     fn reserved_headers_rejected_at_build() {

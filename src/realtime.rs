@@ -7,7 +7,7 @@
 //!
 //! ```no_run
 //! # async fn example() -> quantum_sdk::Result<()> {
-//! let client = quantum_sdk::Client::new("qai_key_xxx");
+//! let client = quantum_sdk::Client::new("qai_key_xxx")?;
 //! let config = quantum_sdk::RealtimeConfig::default();
 //!
 //! let (mut sender, mut receiver) = client.realtime_connect(&config).await?;
@@ -940,7 +940,7 @@ mod tests {
     async fn live_connect() {
         // Requires a running QAI server and valid API key.
         let key = std::env::var("QAI_API_KEY").expect("QAI_API_KEY required");
-        let client = crate::Client::new(key);
+        let client = crate::Client::new(key).unwrap();
         let config = RealtimeConfig::default();
 
         let (sender, mut receiver) = client.realtime_connect(&config).await.unwrap();

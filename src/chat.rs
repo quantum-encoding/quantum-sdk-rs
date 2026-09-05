@@ -11,14 +11,15 @@ use crate::error::Result;
 
 use crate::serde_util::null_as_default as null_as_empty_vec;
 
-/// Deserialize null as None for Option<Vec<T>> fields.
+/// Deserialize an `Option<Vec<T>>` field the gateway may send as `null`
+/// (a Go nil slice): null → None, [] → Some([]), [...] → Some([...]).
+/// A malformed array is an error, not `None`.
 fn deserialize_opt_vec<'de, D, T>(deserializer: D) -> std::result::Result<Option<Vec<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    // null → None, [] → Some([]), [...] → Some([...])
-    Ok(Option::<Vec<T>>::deserialize(deserializer).unwrap_or(None))
+    Option::<Vec<T>>::deserialize(deserializer)
 }
 
 /// Request body for text generation.
@@ -281,10 +282,12 @@ pub struct ChatResponse {
     pub phase: String,
 
     /// `Some(true)` when this response was served from the semantic cache
-    /// (the same signal the `X-Semantic-Cache` header carries at the
-    /// transport layer). `None`/`Some(false)` on a fresh provider response.
-    /// Cached responses are free of provider cost but still metered for
-    /// the gateway's cache-storage overhead.
+    /// (the same signal the `X-QAI-Cache: hit-tier-N` header carries at
+    /// the transport layer). `None`/`Some(false)` on a fresh provider
+    /// response. A hit is served before any credit reservation: nothing
+    /// is charged or metered, `usage.cost_ticks` is 0, no
+    /// `X-QAI-Cost-Ticks` header is sent, and [`cost_ticks`](Self::cost_ticks)
+    /// is 0.
     #[serde(default)]
     pub cached: Option<bool>,
 
@@ -327,8 +330,12 @@ impl ChatResponse {
     }
 
     /// True when the model is requesting tool execution
-    /// (`stop_reason == "tool_use"`). The gateway guarantees this whenever
-    /// tool_use blocks are present, across every provider.
+    /// (`stop_reason == "tool_use"`). Every provider is normalised the same
+    /// way: a natural stop with tool_use blocks present becomes `tool_use`.
+    /// A provider that reports `max_tokens`, `content_filter` or `error`
+    /// alongside tool calls keeps that reason, so check
+    /// [`tool_calls`](Self::tool_calls) too if you must act on a partial
+    /// tool request.
     pub fn is_tool_use(&self) -> bool {
         self.stop_reason == stop_reason::TOOL_USE
     }
@@ -395,20 +402,32 @@ pub struct Citation {
 }
 
 /// Token counts and cost for a chat response.
+///
+/// The two paths count output differently. On the non-streaming
+/// envelope `output_tokens` is completion plus reasoning. On the
+/// streaming `usage` event `output_tokens` is the visible completion
+/// only and reasoning is reported beside it; `cost_ticks` covers both
+/// either way, so the billed output on a stream is
+/// `output_tokens + reasoning_tokens`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatUsage {
     pub input_tokens: i32,
+    /// Output tokens billed at the output rate. Includes reasoning on the
+    /// non-streaming envelope; excludes it on the streaming usage event.
     pub output_tokens: i32,
+    /// What the call cost, covering input, output and reasoning.
     pub cost_ticks: i64,
 
     /// Input tokens served from the provider's prompt cache, billed at the
-    /// lower cached rate. Omitted on responses with no cache hit.
+    /// lower cached rate. Omitted on responses with no cache hit and on
+    /// the streaming usage event.
     #[serde(default)]
     pub cached_tokens: Option<i64>,
 
-    /// Portion of `output_tokens` spent on reasoning / thinking. Omitted on
-    /// responses from non-reasoning models. Informational only:
-    /// `output_tokens` already includes it.
+    /// Reasoning / thinking tokens, billed at the output rate. Omitted on
+    /// responses from non-reasoning models. Already inside
+    /// `output_tokens` on the non-streaming envelope; on top of it on the
+    /// streaming usage event.
     #[serde(default)]
     pub reasoning_tokens: Option<i64>,
 }
@@ -437,11 +456,18 @@ pub struct EstimateResponse {
 /// `tool_use_input_delta`, then one `tool_use_complete` carrying the full
 /// arguments. Some backends emit a single atomic `tool_use` event instead,
 /// so a consumer handles both forms.
+///
+/// A stream that fails after the HTTP 200 is locked in reports the
+/// failure as an event whose type is `error`, `invalid_request` (the
+/// request was rejected: do not retry as-is) or `rate_limit` (the
+/// provider throttled: retry later); all three carry the message in
+/// [`error`](Self::error), and `done` follows.
 #[derive(Debug, Clone)]
 pub struct StreamEvent {
     /// Event type: "content_delta", "thinking_delta",
     /// "tool_use_start", "tool_use_input_delta", "tool_use_complete",
-    /// "tool_use" (atomic), "usage", "heartbeat", "error", "done".
+    /// "tool_use" (atomic), "citations", "session", "usage", "heartbeat",
+    /// "error", "invalid_request", "rate_limit", "done".
     pub event_type: String,
 
     /// Incremental text for content_delta and thinking_delta events.
@@ -462,11 +488,55 @@ pub struct StreamEvent {
     /// Populated for usage events.
     pub usage: Option<ChatUsage>,
 
-    /// Populated for error events.
+    /// Web-search grounding sources, on a `citations` event. The gateway
+    /// sends it once, before the first content delta, on streams where
+    /// search results were injected; empty on every other event.
+    pub citations: Vec<Citation>,
+
+    /// Populated for the `session` event that opens a
+    /// [`chat_session_stream`](Client::chat_session_stream).
+    pub session: Option<StreamSession>,
+
+    /// The failure message, on `error`, `invalid_request` and `rate_limit`
+    /// events, and on an `error` the SDK raises for a payload it could
+    /// not parse.
     pub error: Option<String>,
 
     /// True when the stream is complete.
     pub done: bool,
+}
+
+impl StreamEvent {
+    fn new(event_type: impl Into<String>) -> Self {
+        Self {
+            event_type: event_type.into(),
+            delta: None,
+            tool_use: None,
+            tool_use_start: None,
+            tool_use_input_delta: None,
+            tool_use_complete: None,
+            usage: None,
+            citations: Vec::new(),
+            session: None,
+            error: None,
+            done: false,
+        }
+    }
+
+    /// True when this event reports a failure, whichever of the three
+    /// failure types the gateway used.
+    pub fn is_error(&self) -> bool {
+        self.error.is_some()
+    }
+}
+
+/// The `session` event a session stream opens with.
+#[derive(Debug, Clone)]
+pub struct StreamSession {
+    /// The session identifier (newly created when the request had none).
+    pub session_id: String,
+    /// Whether the history was compacted before this turn.
+    pub compacted: bool,
 }
 
 /// Incremental text in a streaming event.
@@ -537,6 +607,14 @@ struct RawStreamEvent {
     cost_ticks: Option<i64>,
     #[serde(default)]
     message: Option<String>,
+    /// Carried by the `citations` event.
+    #[serde(default)]
+    citations: Option<Vec<Citation>>,
+    /// Carried by the `session` event that opens a session stream.
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    compacted: Option<bool>,
 }
 
 pin_project! {
@@ -552,6 +630,15 @@ impl Stream for ChatStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.project().inner.poll_next(cx)
+    }
+}
+
+impl ChatStream {
+    /// Wraps an SSE response body as a stream of parsed events.
+    pub(crate) fn from_response(resp: reqwest::Response) -> Self {
+        Self {
+            inner: Box::pin(sse_to_events(resp.bytes_stream())),
+        }
     }
 }
 
@@ -606,7 +693,7 @@ impl Client {
     ///
     /// ```no_run
     /// # async fn example() -> quantum_sdk::Result<()> {
-    /// let client = quantum_sdk::Client::new("qai_...");
+    /// let client = quantum_sdk::Client::new("qai_...")?;
     /// let req = quantum_sdk::ChatRequest {
     ///     model: "gemini-flash-latest".into(),
     ///     messages: vec![quantum_sdk::ChatMessage::user("hi")],
@@ -637,7 +724,7 @@ impl Client {
     /// use futures_util::StreamExt;
     ///
     /// # async fn example() -> quantum_sdk::Result<()> {
-    /// let client = quantum_sdk::Client::new("key");
+    /// let client = quantum_sdk::Client::new("key")?;
     /// let req = quantum_sdk::ChatRequest {
     ///     model: "claude-sonnet-4-6".into(),
     ///     messages: vec![quantum_sdk::ChatMessage::user("Hello!")],
@@ -658,13 +745,7 @@ impl Client {
         self.apply_region(&mut req);
 
         let (resp, _meta) = self.post_stream_raw("/qai/v1/chat", &req).await?;
-
-        let byte_stream = resp.bytes_stream();
-        let event_stream = sse_to_events(byte_stream);
-
-        Ok(ChatStream {
-            inner: Box::pin(event_stream),
-        })
+        Ok(ChatStream::from_response(resp))
     }
 }
 
@@ -726,49 +807,21 @@ where
             let payload = &line["data: ".len()..];
 
             if payload == "[DONE]" {
-                let ev = StreamEvent {
-                    event_type: "done".to_string(),
-                    delta: None,
-                    tool_use: None,
-                    tool_use_start: None,
-                    tool_use_input_delta: None,
-                    tool_use_complete: None,
-                    usage: None,
-                    error: None,
-                    done: true,
-                };
+                let mut ev = StreamEvent::new("done");
+                ev.done = true;
                 return Some((ev, lines));
             }
 
             let raw: RawStreamEvent = match serde_json::from_str(payload) {
                 Ok(r) => r,
                 Err(e) => {
-                    let ev = StreamEvent {
-                        event_type: "error".to_string(),
-                        delta: None,
-                        tool_use: None,
-                        tool_use_start: None,
-                        tool_use_input_delta: None,
-                        tool_use_complete: None,
-                        usage: None,
-                        error: Some(format!("parse SSE: {e}")),
-                        done: false,
-                    };
+                    let mut ev = StreamEvent::new("error");
+                    ev.error = Some(format!("parse SSE: {e}"));
                     return Some((ev, lines));
                 }
             };
 
-            let mut ev = StreamEvent {
-                event_type: raw.event_type.clone(),
-                delta: None,
-                tool_use: None,
-                tool_use_start: None,
-                tool_use_input_delta: None,
-                tool_use_complete: None,
-                usage: None,
-                error: None,
-                done: false,
-            };
+            let mut ev = StreamEvent::new(raw.event_type.as_str());
 
             match raw.event_type.as_str() {
                 "content_delta" | "thinking_delta" => {
@@ -813,8 +866,19 @@ where
                         reasoning_tokens: raw.reasoning_tokens,
                     });
                 }
-                "error" => {
-                    ev.error = raw.message;
+                // The gateway classifies a failed stream as one of three
+                // types; the message rides the same field on all of them.
+                "error" | "invalid_request" | "rate_limit" => {
+                    ev.error = Some(raw.message.unwrap_or_default());
+                }
+                "citations" => {
+                    ev.citations = raw.citations.unwrap_or_default();
+                }
+                "session" => {
+                    ev.session = Some(StreamSession {
+                        session_id: raw.session_id.unwrap_or_default(),
+                        compacted: raw.compacted.unwrap_or(false),
+                    });
                 }
                 "heartbeat" => {}
                 _ => {}
@@ -841,7 +905,7 @@ mod tests {
 
     #[test]
     fn client_without_region_leaves_requests_alone() {
-        let client = Client::new("qai_k_test");
+        let client = Client::new("qai_k_test").unwrap();
         let mut req = base_request();
         client.apply_region(&mut req);
         assert!(req.provider_options.is_none());
@@ -889,6 +953,77 @@ mod tests {
             opts.get("region").and_then(|v| v.as_str()),
             Some("americas"),
             "the request-level choice must win"
+        );
+    }
+
+    /// Runs the SSE parser over a canned body and collects the events.
+    async fn parse_sse(body: &'static str) -> Vec<StreamEvent> {
+        use futures_util::StreamExt;
+        let chunks = futures_util::stream::iter(vec![Ok::<bytes::Bytes, reqwest::Error>(
+            bytes::Bytes::from_static(body.as_bytes()),
+        )]);
+        sse_to_events(chunks).collect().await
+    }
+
+    #[tokio::test]
+    async fn a_failed_stream_carries_its_message_whatever_the_type() {
+        let events = parse_sse(concat!(
+            "data: {\"type\":\"invalid_request\",\"message\":\"stream failed: bad model\"}\n\n",
+            "data: {\"type\":\"rate_limit\",\"message\":\"stream failed: 429\"}\n\n",
+            "data: {\"type\":\"error\",\"message\":\"request timeout\"}\n\n",
+            "data: [DONE]\n\n",
+        ))
+        .await;
+        assert_eq!(events.len(), 4);
+        for (ev, expected) in events.iter().zip([
+            ("invalid_request", "stream failed: bad model"),
+            ("rate_limit", "stream failed: 429"),
+            ("error", "request timeout"),
+        ]) {
+            assert_eq!(ev.event_type, expected.0);
+            assert!(ev.is_error());
+            assert_eq!(ev.error.as_deref(), Some(expected.1));
+        }
+        assert!(events[3].done);
+    }
+
+    #[tokio::test]
+    async fn citations_and_session_events_are_parsed() {
+        let events = parse_sse(concat!(
+            "data: {\"type\":\"session\",\"session_id\":\"sess_1\",\"compacted\":true}\n\n",
+            "data: {\"type\":\"citations\",\"citations\":[{\"title\":\"Rust\",\"url\":\"https://rust-lang.org\",\"text\":\"snippet\",\"index\":1}]}\n\n",
+            ": ping\n\n",
+            "data: {\"type\":\"content_delta\",\"delta\":{\"text\":\"hi\"}}\n\n",
+            "data: {\"type\":\"usage\",\"input_tokens\":3,\"output_tokens\":1,\"reasoning_tokens\":7,\"cost_ticks\":42}\n\n",
+            "data: [DONE]\n\n",
+        ))
+        .await;
+        let session = events[0].session.as_ref().expect("session event");
+        assert_eq!(session.session_id, "sess_1");
+        assert!(session.compacted);
+        assert_eq!(events[1].event_type, "citations");
+        assert_eq!(events[1].citations.len(), 1);
+        assert_eq!(events[1].citations[0].url, "https://rust-lang.org");
+        assert_eq!(events[1].citations[0].index, 1);
+        assert_eq!(events[2].delta.as_ref().unwrap().text, "hi");
+        let usage = events[3].usage.as_ref().unwrap();
+        assert_eq!(usage.output_tokens, 1);
+        assert_eq!(usage.reasoning_tokens, Some(7));
+        assert_eq!(usage.cached_tokens, None);
+        assert!(events[4].done);
+    }
+
+    #[test]
+    fn a_malformed_content_block_array_is_an_error_not_none() {
+        let null: ChatMessage =
+            serde_json::from_str(r#"{"role":"assistant","content_blocks":null}"#).unwrap();
+        assert!(null.content_blocks.is_none());
+        let bad = serde_json::from_str::<ChatMessage>(
+            r#"{"role":"assistant","content_blocks":[{"type":42}]}"#,
+        );
+        assert!(
+            bad.is_err(),
+            "a malformed block array must not decode as None"
         );
     }
 }

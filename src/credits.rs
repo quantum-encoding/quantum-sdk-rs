@@ -74,24 +74,27 @@ pub struct CreditBalanceResponse {
     pub balance_usd: f64,
 }
 
-/// A pricing tier.
+/// A developer tier, as `/qai/v1/credits/tiers` describes it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreditTier {
-    /// Tier name.
-    #[serde(default)]
-    pub name: Option<String>,
+    /// Tier identifier (e.g. `"standard"`, `"lifetime"`, `"internal"`).
+    pub tier: String,
 
-    /// Minimum balance for this tier.
+    /// Display label.
     #[serde(default)]
-    pub min_balance: i64,
+    pub label: String,
 
-    /// Discount percentage.
+    /// Margin the gateway adds on top of provider cost, in percent.
     #[serde(default)]
-    pub discount_percent: f64,
+    pub margin_percent: f64,
 
-    /// Additional tier data.
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
+    /// What the tier offers.
+    #[serde(default)]
+    pub description: String,
+
+    /// How an account qualifies for it.
+    #[serde(default)]
+    pub requirements: String,
 }
 
 /// Response from listing credit tiers.
@@ -111,9 +114,13 @@ pub struct DevProgramApplyRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company: Option<String>,
 
-    /// Expected monthly spend in USD (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_usd: Option<f64>,
+    /// Expected monthly spend in USD (optional); `expected_monthly_usd`
+    /// on the wire.
+    #[serde(
+        rename = "expected_monthly_usd",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected_monthly_usd: Option<f64>,
 
     /// Website URL (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,5 +244,38 @@ impl Client {
             )
             .await?;
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tiers_read_the_gateways_tier_info_shape() {
+        // billing.TierInfo: {tier,label,margin_percent,description,requirements}.
+        let body = r#"{"tiers":[{"tier":"standard","label":"Standard","margin_percent":10,
+            "description":"Pay as you go","requirements":"None"}]}"#;
+        let resp: CreditTiersResponse = serde_json::from_str(body).unwrap();
+        let t = &resp.tiers[0];
+        assert_eq!(t.tier, "standard");
+        assert_eq!(t.label, "Standard");
+        assert_eq!(t.margin_percent, 10.0);
+        assert_eq!(t.requirements, "None");
+    }
+
+    #[test]
+    fn dev_program_spend_uses_the_gateways_field_name() {
+        let req = DevProgramApplyRequest {
+            use_case: "agents".into(),
+            company: None,
+            expected_monthly_usd: Some(250.0),
+            website: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert_eq!(
+            json,
+            r#"{"use_case":"agents","expected_monthly_usd":250.0}"#
+        );
     }
 }

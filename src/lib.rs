@@ -15,7 +15,7 @@
 //!
 //! ```no_run
 //! # async fn example() -> quantum_sdk::Result<()> {
-//! let client = quantum_sdk::Client::new("your-api-key");
+//! let client = quantum_sdk::Client::new("your-api-key")?;
 //!
 //! let resp = client.chat(&quantum_sdk::ChatRequest {
 //!     model: "claude-sonnet-4-6".into(),
@@ -76,16 +76,16 @@ pub use error::{ApiError, Error, ErrorCode, Result};
 // Chat types
 pub use chat::{
     ChatMessage, ChatRequest, ChatResponse, ChatStream, ChatTool, ChatUsage, Citation,
-    ContentBlock, EstimateResponse, StreamDelta, StreamEvent, StreamToolUse, StreamToolUseComplete,
-    StreamToolUseInputDelta, StreamToolUseStart,
+    ContentBlock, EstimateResponse, StreamDelta, StreamEvent, StreamSession, StreamToolUse,
+    StreamToolUseComplete, StreamToolUseInputDelta, StreamToolUseStart,
 };
 // Canonical stop_reason constants (`stop_reason::END_TURN`, etc.).
 pub use chat::stop_reason;
 
 // Session types
 pub use session::{
-    ContextConfig, ContextMetadata, SessionChatRequest, SessionChatResponse, SessionContext,
-    SessionToolResult, ToolResult,
+    ContextConfig, ContextMetadata, SessionChatRequest, SessionChatResponse, SessionChatStream,
+    SessionContext, SessionToolResult, ToolResult,
 };
 
 // Agent types
@@ -318,3 +318,10 @@ pub use rag::{CollectionDetail, CollectionSearchResponse, DeleteCollectionRespon
 
 // Error helpers
 pub use error::{is_auth_error, is_not_found_error, is_rate_limit_error};
+
+/// The README's code blocks compile as doctests (`cargo test --doc`), so
+/// an example that drifts from the API fails the build instead of the
+/// reader.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+mod readme_examples {}

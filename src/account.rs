@@ -69,7 +69,8 @@ pub struct UsageSummaryResponse {
 /// Usage query parameters.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct UsageQuery {
-    /// Max entries per page (default 20, max 100).
+    /// Max entries per page, 1 to 100. A value outside that range is not
+    /// clamped: the gateway ignores it and serves the default page of 20.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i32>,
 

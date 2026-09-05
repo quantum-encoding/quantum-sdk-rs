@@ -9,7 +9,7 @@
 //!
 //! ```no_run
 //! # async fn example() -> quantum_sdk::Result<()> {
-//! let client = quantum_sdk::Client::new("qai_key_xxx");
+//! let client = quantum_sdk::Client::new("qai_key_xxx")?;
 //!
 //! let resp = client.batch_submit(&[quantum_sdk::BatchJob {
 //!     model: "claude-sonnet-4-6".into(),

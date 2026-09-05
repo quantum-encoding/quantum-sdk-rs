@@ -95,8 +95,11 @@ pub struct AuthGoogleRequest {
     /// The Google ID token (JWT) from the OAuth flow.
     pub id_token: String,
 
-    /// The OAuth client ID the token was issued for; it must be one the
-    /// gateway recognises, and the token's audience is checked against it.
+    /// The OAuth client ID the token was issued for. The gateway checks
+    /// the token's audience against it first and, when that fails,
+    /// against every other client id it recognises — so a token minted
+    /// for a different recognised client still signs in. An unrecognised
+    /// id is rejected.
     pub client_id: String,
 
     /// Per-device key bucket (see [`AuthAppleRequest::device_id`]).
@@ -197,6 +200,10 @@ impl Client {
     }
 
     /// Sign out: revoke the session token this client was built with.
+    ///
+    /// Session tokens only. A client built on a `qai_k_` or `qai_eph_`
+    /// key gets a 403 `invalid_request`; revoke those with
+    /// [`revoke_key`](Client::revoke_key) instead.
     pub async fn revoke_session(&self) -> Result<RevokeSessionResponse> {
         let (resp, _meta) = self
             .delete_json::<RevokeSessionResponse>("/qai/v1/auth/session")

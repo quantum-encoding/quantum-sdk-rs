@@ -13,7 +13,7 @@ async fn main() {
     let api_key =
         std::env::var("QAI_API_KEY").expect("QAI_API_KEY environment variable is required");
 
-    let client = Client::new(api_key);
+    let client = Client::new(api_key).expect("QAI_API_KEY is not a valid header value");
 
     // --- Non-streaming example ---
     println!("=== Non-streaming Chat ===");
