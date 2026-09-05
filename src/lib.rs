@@ -239,9 +239,10 @@ pub use missions::{
 
 // Security types
 pub use security::{
-    SecurityAssessment, SecurityBlocklistEntry, SecurityBlocklistResponse, SecurityCheckResponse,
-    SecurityFinding, SecurityReportRequest, SecurityReportResponse, SecurityScanHtmlRequest,
-    SecurityScanResponse, SecurityScanUrlRequest,
+    CodeScanFinding, CodeScanReport, SecurityAssessment, SecurityBlocklistEntry,
+    SecurityBlocklistResponse, SecurityCheckResponse, SecurityFinding, SecurityReportRequest,
+    SecurityReportResponse, SecurityScanCodeRequest, SecurityScanHtmlRequest, SecurityScanResponse,
+    SecurityScanUrlRequest,
 };
 
 // Media session types

@@ -30,6 +30,108 @@ pub struct SecurityScanHtmlRequest {
     pub url: Option<String>,
 }
 
+/// Request body for `POST /qai/v1/security/scan-code`.
+///
+/// Two modes: set `code` (with `filename` so the language can be detected) to
+/// scan one file, or set `url` to clone a GitHub repository and scan a tree.
+/// One of the two is required.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct SecurityScanCodeRequest {
+    /// Source of the single file to scan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+
+    /// Filename for `code`; the language is detected from its extension.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+
+    /// Language override, when the filename does not settle it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// GitHub repository URL to clone and scan instead of `code`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// Branch to check out for `url`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+
+    /// Subdirectory of the checkout to scan. Must be relative and stay inside
+    /// the repository root.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// One issue found by the code security scan.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CodeScanFinding {
+    /// Issue category.
+    #[serde(default)]
+    pub category: String,
+
+    /// Severity (`critical`, `high`, `medium`, `low`).
+    #[serde(default)]
+    pub severity: String,
+
+    /// The rule that matched.
+    #[serde(default)]
+    pub pattern: String,
+
+    /// File the issue is in.
+    #[serde(default)]
+    pub file: String,
+
+    /// Line the issue is on.
+    #[serde(default)]
+    pub line: i64,
+
+    /// The offending line, truncated.
+    #[serde(default)]
+    pub content: String,
+
+    /// What is wrong.
+    #[serde(default)]
+    pub description: String,
+
+    /// Suggested fix, when the rule carries one.
+    #[serde(default)]
+    pub fix: String,
+
+    /// Whether this matches a known machine-generated code pattern.
+    #[serde(default)]
+    pub ai_pattern: bool,
+}
+
+/// Response from `POST /qai/v1/security/scan-code`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CodeScanReport {
+    /// What was scanned — the filename in single-file mode, the scanned
+    /// directory otherwise.
+    #[serde(default)]
+    pub path: String,
+
+    /// Number of files scanned.
+    #[serde(default)]
+    pub files_scanned: i64,
+
+    /// Everything found.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub findings: Vec<CodeScanFinding>,
+
+    /// Finding counts keyed by severity.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub summary: std::collections::HashMap<String, i64>,
+
+    /// Finding counts keyed by category.
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub categories: std::collections::HashMap<String, i64>,
+
+    /// Security score from 0 to 100; higher is better.
+    #[serde(default)]
+    pub score: f64,
+}
+
 /// Request body for reporting a suspicious URL.
 #[derive(Debug, Clone, Serialize)]
 pub struct SecurityReportRequest {
@@ -265,6 +367,18 @@ impl Client {
             url: url.to_string(),
         };
         let (resp, _) = self.post_json("/qai/v1/security/scan-url", &req).await?;
+        Ok(resp)
+    }
+
+    /// Scan source code for security issues — one file inline, or a GitHub
+    /// repository the gateway clones.
+    ///
+    /// `POST /qai/v1/security/scan-code`
+    pub async fn security_scan_code(
+        &self,
+        req: &SecurityScanCodeRequest,
+    ) -> Result<CodeScanReport> {
+        let (resp, _) = self.post_json("/qai/v1/security/scan-code", req).await?;
         Ok(resp)
     }
 
