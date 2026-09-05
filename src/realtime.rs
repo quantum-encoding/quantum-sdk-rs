@@ -269,12 +269,12 @@ impl RealtimeSession {
 impl Client {
     /// Request an ephemeral token from the QAI proxy for direct voice connection.
     /// Call this before `realtime_connect_direct` to get a scoped token.
-    /// Pass an optional `provider` to route to a specific backend (e.g. "openai").
     pub async fn realtime_session(&self) -> Result<RealtimeSession> {
         self.realtime_session_for(None).await
     }
 
-    /// Request an ephemeral token for a specific provider.
+    /// Request an ephemeral token routed to a specific backend
+    /// (e.g. `"openai"`); `None` takes the gateway's default provider.
     pub async fn realtime_session_for(&self, provider: Option<&str>) -> Result<RealtimeSession> {
         self.realtime_session_with(provider, serde_json::json!({}))
             .await

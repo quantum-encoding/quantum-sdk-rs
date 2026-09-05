@@ -41,7 +41,7 @@ pub struct VoicesResponse {
     pub voices: Vec<Voice>,
 }
 
-/// Describes an available voice with detail info (sdk-graph canonical name).
+/// Describes an available voice with detail info.
 #[derive(Debug, Clone, Deserialize)]
 pub struct VoiceInfo {
     /// Voice identifier.

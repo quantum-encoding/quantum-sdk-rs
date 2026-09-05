@@ -259,8 +259,8 @@ pub struct StartSessionRequest {
     pub environment_id: String,
 }
 
-/// A running session. The client holds this descriptor and passes it back on
-/// every subsequent session call — the gateway keeps no per-connection state.
+/// A running session. This descriptor is the whole of the client's session
+/// state; every session call takes it as an argument.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeSession {
     /// Session identifier.

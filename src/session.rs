@@ -44,7 +44,8 @@ pub struct ToolResult {
     pub is_error: Option<bool>,
 }
 
-/// A tool execution result from the client (used in SessionChatRequest.tool_results).
+/// A tool execution result from the client. Same shape as [`ToolResult`],
+/// which is the type [`SessionChatRequest::tool_results`] carries.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionToolResult {
     /// References the tool_use ID from the previous response.
@@ -58,7 +59,8 @@ pub struct SessionToolResult {
     pub is_error: Option<bool>,
 }
 
-/// Context metadata returned in session responses (includes tools_cleared).
+/// Context metadata with a stale-tool-result count. [`SessionChatResponse`]
+/// carries [`SessionContext`], which lacks that field.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ContextMetadata {
     /// Total number of turns in the conversation.

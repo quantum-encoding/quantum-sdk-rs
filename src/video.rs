@@ -45,7 +45,7 @@ pub struct VideoResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
-    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    /// Credit balance in ticks after this request was charged.
     #[serde(default)]
     pub balance_after: i64,
 
@@ -136,12 +136,12 @@ pub struct VideoStudioRequest {
     pub aspect_ratio: Option<String>,
 }
 
+/// Backwards-compatible alias.
+pub type StudioVideoRequest = VideoStudioRequest;
+
 // ---------------------------------------------------------------------------
 // HeyGen Translate
 // ---------------------------------------------------------------------------
-
-/// Backwards-compatible alias.
-pub type StudioVideoRequest = VideoStudioRequest;
 
 /// Request body for video translation.
 #[derive(Debug, Clone, Serialize, Default)]

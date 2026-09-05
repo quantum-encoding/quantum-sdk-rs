@@ -50,7 +50,7 @@ pub struct TextToSpeechResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
-    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    /// Post-deduction credit balance in ticks.
     #[serde(default)]
     pub balance_after: i64,
 
@@ -96,7 +96,7 @@ pub struct SpeechToTextResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
-    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    /// Post-deduction credit balance in ticks.
     #[serde(default)]
     pub balance_after: i64,
 
@@ -137,7 +137,7 @@ pub struct MusicResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
-    /// Post-deduction credit balance in ticks (Receipt Pattern).
+    /// Post-deduction credit balance in ticks.
     #[serde(default)]
     pub balance_after: i64,
 
@@ -472,7 +472,7 @@ pub struct AlignResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Typed response structs (parity with Go SDK)
+// Typed response structs
 // ---------------------------------------------------------------------------
 
 /// Response from dialogue generation.
@@ -763,7 +763,6 @@ pub struct ElevenMusicClip {
 }
 
 /// Response from advanced music generation.
-/// Backend returns: { clips: [...], model, cost_ticks, request_id }
 #[derive(Debug, Clone, Deserialize)]
 pub struct ElevenMusicResponse {
     /// Generated music clips.
@@ -796,10 +795,6 @@ pub struct FinetuneInfo {
 pub struct ListFinetunesResponse {
     pub finetunes: Vec<FinetuneInfo>,
 }
-
-// ---------------------------------------------------------------------------
-// Client impl
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // HeyGen sounds search (background music + sound effects)
@@ -876,6 +871,10 @@ pub struct AudioSoundsResponse {
     #[serde(default)]
     pub request_id: String,
 }
+
+// ---------------------------------------------------------------------------
+// Client impl
+// ---------------------------------------------------------------------------
 
 impl Client {
     /// Searches HeyGen's background-music and sound-effects catalogs

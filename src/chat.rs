@@ -80,11 +80,10 @@ pub struct ChatRequest {
 }
 
 impl ChatRequest {
-    /// Overrides the routing region for THIS chat request — rides
+    /// Overrides the routing region for this one request — rides
     /// `provider_options.region` on the wire and wins over the key's scope
-    /// region. Honored by `/qai/v1/chat` only: the agent endpoint routes by
-    /// the key's scope by design (its wire contract carries no
-    /// provider_options).
+    /// region. Honored by `/qai/v1/chat` only: the agent endpoint carries no
+    /// provider_options and routes by the key's scope.
     pub fn region(mut self, region: crate::region::Region) -> Self {
         let opts = self.provider_options.get_or_insert_with(HashMap::new);
         opts.insert(
@@ -261,15 +260,12 @@ pub struct ChatResponse {
     /// Token counts and cost.
     pub usage: Option<ChatUsage>,
 
-    /// Why generation stopped. As of the gateway's provider-normalization
-    /// change, this is a canonical value drawn from the [`stop_reason`]
-    /// module — the same space regardless of which provider served the
-    /// request: `end_turn`, `tool_use`, `max_tokens`, `stop_sequence`,
-    /// `content_filter`, `refusal`, or `error`. A provider-specific reason
-    /// with no canonical mapping passes through lowercased, so match the
-    /// known constants and treat anything else as terminal. Kept as a
-    /// `String` (not an enum) precisely so an unrecognized value never
-    /// fails to deserialize.
+    /// Why generation stopped: a canonical value from the [`stop_reason`]
+    /// module, the same space regardless of which provider served the
+    /// request. A provider-specific reason with no canonical mapping passes
+    /// through lowercased, so match the known constants and treat anything
+    /// else as terminal. A `String` rather than an enum so an unrecognized
+    /// value never fails to deserialize.
     #[serde(default)]
     pub stop_reason: String,
 
@@ -340,8 +336,8 @@ impl ChatResponse {
     /// True when a safety classifier declined the request
     /// (`stop_reason == "refusal"`). On a refusal the content may be empty
     /// or a partial, already-streamed prefix that should be discarded —
-    /// check this before reading [`text`](Self::text). (Newer Anthropic
-    /// models such as Claude Fable 5 can refuse with an HTTP 200.)
+    /// check this before reading [`text`](Self::text). A refusal arrives as
+    /// an HTTP 200, so it is never surfaced as an error.
     pub fn is_refusal(&self) -> bool {
         self.stop_reason == stop_reason::REFUSAL
     }
@@ -405,24 +401,14 @@ pub struct ChatUsage {
     pub output_tokens: i32,
     pub cost_ticks: i64,
 
-    /// Input tokens served from the provider's prompt cache, billed
-    /// at the (lower) cached rate. Omitted on responses with no
-    /// cache hit. Backend wire shape: `cached_tokens` (i32);
-    /// promoted to `Option<i64>` here for headroom on future
-    /// long-cache scenarios (multi-hour video transcripts, etc.).
-    /// Multi-turn billing audits reconcile by computing
-    /// (non-cached) input_tokens vs (cached) cached_tokens — both
-    /// roll into the provider's billable total.
+    /// Input tokens served from the provider's prompt cache, billed at the
+    /// lower cached rate. Omitted on responses with no cache hit.
     #[serde(default)]
     pub cached_tokens: Option<i64>,
 
-    /// Sub-component of `output_tokens` that was model reasoning /
-    /// thinking output (Gemini 3.x's `thoughtTokens`, OpenAI o-
-    /// series' reasoning tokens, Anthropic's extended-thinking
-    /// blocks). Omitted on responses from non-reasoning models.
-    /// Total billable output = `output_tokens` (which already
-    /// includes the reasoning component — this field is just
-    /// transparency on how much of that was thinking).
+    /// Portion of `output_tokens` spent on reasoning / thinking. Omitted on
+    /// responses from non-reasoning models. Informational only:
+    /// `output_tokens` already includes it.
     #[serde(default)]
     pub reasoning_tokens: Option<i64>,
 }
@@ -430,48 +416,38 @@ pub struct ChatUsage {
 /// Response shape from `POST /qai/v1/chat/estimate`. Returned by
 /// `Client::estimate_chat`.
 ///
-/// `estimated_cost_ticks` is the upfront reservation the actual
-/// `chat` call would book — it's a worst-case ceiling, not a
-/// prediction of the final settle. For text-only payloads, expected
-/// settle is close to this number; for video / multimodal inputs
-/// the ceiling can over-estimate (Gemini's reasoning budget +
-/// `max_tokens` cap drive the output side) and the post-call
-/// settle refunds the difference. Either way, this is the number
-/// the user must have available to send the request.
-///
-/// `estimated_cost_usd` is the same value pre-divided by
-/// `TicksPerUSD` for convenience — no need to know the per-tick
-/// rate on the client.
+/// `estimated_cost_ticks` is the upfront reservation a `chat` call with the
+/// same request would book: a worst-case ceiling the caller must have
+/// available, not a prediction of the final settle. Text-only payloads
+/// settle close to it; video and other multimodal inputs can over-estimate,
+/// and the post-call settle refunds the difference.
 #[derive(Debug, Clone, Deserialize)]
 pub struct EstimateResponse {
     pub estimated_cost_ticks: i64,
+    /// The same value converted to USD at the gateway's tick rate.
     pub estimated_cost_usd: f64,
-    /// Echo of the model name the estimate was computed against —
-    /// handy when the caller wants to display "≈ X credits on
-    /// gemini-flash-latest" without re-reading the request.
+    /// Model the estimate was computed against.
     #[serde(default)]
     pub model: String,
 }
 
 /// A single event from an SSE chat stream.
 ///
-/// Tool-use streaming uses a triplet of events since v0.7:
-/// `tool_use_start` carries `tool_use_start`, `tool_use_input_delta`
-/// carries `tool_use_input_delta`, and `tool_use_complete` carries
-/// `tool_use_complete`. The legacy atomic `tool_use` event is still
-/// emitted by backends that haven't shipped the triplet yet — for new
-/// code, prefer the triplet fields.
+/// A tool call streams as a triplet: one `tool_use_start`, zero or more
+/// `tool_use_input_delta`, then one `tool_use_complete` carrying the full
+/// arguments. Some backends emit a single atomic `tool_use` event instead,
+/// so a consumer handles both forms.
 #[derive(Debug, Clone)]
 pub struct StreamEvent {
     /// Event type: "content_delta", "thinking_delta",
     /// "tool_use_start", "tool_use_input_delta", "tool_use_complete",
-    /// "tool_use" (legacy), "usage", "heartbeat", "error", "done".
+    /// "tool_use" (atomic), "usage", "heartbeat", "error", "done".
     pub event_type: String,
 
     /// Incremental text for content_delta and thinking_delta events.
     pub delta: Option<StreamDelta>,
 
-    /// Populated for legacy atomic tool_use events.
+    /// Populated for atomic tool_use events.
     pub tool_use: Option<StreamToolUse>,
 
     /// Populated for tool_use_start events.
@@ -499,7 +475,7 @@ pub struct StreamDelta {
     pub text: String,
 }
 
-/// A tool call from a legacy (atomic) streaming event.
+/// A tool call from an atomic `tool_use` streaming event.
 #[derive(Debug, Clone, Deserialize)]
 pub struct StreamToolUse {
     pub id: String,
@@ -553,9 +529,8 @@ struct RawStreamEvent {
     input_tokens: Option<i32>,
     #[serde(default)]
     output_tokens: Option<i32>,
-    /// Sub-component of `output_tokens` that was reasoning / thinking.
-    /// The backend's streaming `usage` event carries this (see
-    /// `sse.go` `SSEWriter::Usage`); absent on non-reasoning models.
+    /// Portion of `output_tokens` spent on reasoning; carried by `usage`
+    /// events, absent on non-reasoning models.
     #[serde(default)]
     reasoning_tokens: Option<i64>,
     #[serde(default)]
@@ -619,13 +594,11 @@ impl Client {
         Ok(resp)
     }
 
-    /// Estimates the upfront credit reservation a `chat` call with
-    /// the same `ChatRequest` would book — WITHOUT making the
-    /// provider call or deducting credits. Use this to render a
-    /// "this will cost ≈ X credits" hint in the UI before the user
-    /// commits to a payload (notably long YouTube videos attached
-    /// via `ContentBlock.file_uri`, which bill at ~263 tokens per
-    /// second and can dwarf a text-only chat by 1000×).
+    /// Estimates the upfront credit reservation a `chat` call with the same
+    /// `ChatRequest` would book, without calling the provider or deducting
+    /// credits. Use it to show a cost hint before the user commits to an
+    /// expensive payload such as a long video attached via
+    /// `ContentBlock.file_uri`.
     ///
     /// Wraps `POST /qai/v1/chat/estimate`. Same auth as `chat()`.
     ///
@@ -645,11 +618,8 @@ impl Client {
     /// # }
     /// ```
     pub async fn estimate_chat(&self, req: &ChatRequest) -> Result<EstimateResponse> {
-        // Drop `stream` from the estimate payload — the backend
-        // doesn't care about streaming for cost purposes (output
-        // ceiling is the same either way) and including it would
-        // make the SDK shape diverge needlessly from the JSON the
-        // server sees on the wire.
+        // Streaming does not change the cost ceiling, so `stream` stays off
+        // the estimate payload.
         let mut req = req.clone();
         req.stream = None;
         self.apply_region(&mut req);
@@ -805,8 +775,7 @@ where
                     ev.delta = raw.delta;
                 }
                 "tool_use" => {
-                    // Legacy atomic event — kept for back-compat with
-                    // backends that haven't shipped the triplet (v0.7+).
+                    // Atomic form, from backends that do not stream the triplet.
                     ev.tool_use = Some(StreamToolUse {
                         id: raw.id.unwrap_or_default(),
                         name: raw.name.unwrap_or_default(),
@@ -837,11 +806,9 @@ where
                         input_tokens: raw.input_tokens.unwrap_or(0),
                         output_tokens: raw.output_tokens.unwrap_or(0),
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
-                        // The backend's streaming usage event surfaces
-                        // reasoning_tokens (sse.go SSEWriter::Usage) but
-                        // not cached_tokens — that split only arrives on
-                        // the final non-stream envelope. None for
-                        // cached_tokens here is faithful, not a bug.
+                        // The streaming usage event carries reasoning_tokens
+                        // but not cached_tokens; the cache split arrives only
+                        // on the non-streaming envelope.
                         cached_tokens: None,
                         reasoning_tokens: raw.reasoning_tokens,
                     });

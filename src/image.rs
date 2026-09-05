@@ -90,8 +90,8 @@ pub struct ImageResponse {
     #[serde(default)]
     pub cost_ticks: i64,
 
-    /// Post-deduction credit balance in ticks (Receipt Pattern). Zero for
-    /// free/cached calls or responses that predate the field.
+    /// Post-deduction credit balance in ticks. Zero for free or cached
+    /// calls, or when the response omits it.
     #[serde(default)]
     pub balance_after: i64,
 

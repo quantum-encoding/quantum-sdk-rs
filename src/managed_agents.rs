@@ -6,7 +6,7 @@
 //! credentials and the beta headers, so the client never holds the provider
 //! key, and egress goes through the gateway's SSRF-safe pool.
 //!
-//! **This passthrough is admin-only.** Managed Agents spend Anthropic credits
+//! This passthrough is admin-only. Managed Agents spend Anthropic credits
 //! the gateway cannot meter inline, so the fail-closed billing rule restricts
 //! it. End-user managed-agent work goes through the mirrored
 //! [`agent_runtime`](crate::agent_runtime) surface, which is metered.

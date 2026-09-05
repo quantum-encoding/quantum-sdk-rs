@@ -1,8 +1,8 @@
 //! HeyGen Avatar Realtime (Broadcast) sessions.
 //!
 //! A realtime session makes an avatar speak live and publishes a plain HLS
-//! stream (720p). Sessions are **prepaid**: the entire `max_duration_seconds`
-//! block is charged at create time and is **not refunded** on early cancel
+//! stream (720p). Sessions are prepaid: the entire `max_duration_seconds`
+//! block is charged at create time and is not refunded on early cancel
 //! (cancelling only stops the upstream meter).
 //!
 //! Recommended flow:
@@ -69,8 +69,7 @@ pub struct AvatarRealtimeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<AvatarAudioInput>,
 
-    /// Prepaid block in seconds (1–3600). The whole block is charged at
-    /// create time; early cancel does NOT refund.
+    /// Prepaid block in seconds (1–3600), charged in full at create time.
     pub max_duration_seconds: i32,
 }
 
@@ -93,7 +92,7 @@ pub struct AvatarRealtimeCreateResponse {
     pub cost_ticks: i64,
 
     /// Post-deduction credit balance in ticks (from the X-QAI-Balance-After
-    /// header; Receipt Pattern).
+    /// header).
     #[serde(default)]
     pub balance_after: i64,
 
@@ -203,8 +202,8 @@ pub struct AvatarRealtimeCancelResponse {
 impl Client {
     /// Creates a live avatar realtime session (HeyGen Broadcast).
     ///
-    /// PREPAID: the entire `max_duration_seconds` block (1–3600 s) is charged
-    /// at create time; cancelling early does NOT refund.
+    /// The entire `max_duration_seconds` block (1–3600 s) is charged at
+    /// create time; cancelling early does not refund it.
     pub async fn create_avatar_realtime_session(
         &self,
         req: &AvatarRealtimeRequest,

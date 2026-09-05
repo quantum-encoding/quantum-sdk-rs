@@ -74,7 +74,8 @@ pub struct MissionChatRequest {
     /// Message to send to the architect.
     pub message: String,
 
-    /// Enable streaming (not yet supported).
+    /// Request a streamed reply. The chat route does not stream, so the flag
+    /// has no effect.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
 }

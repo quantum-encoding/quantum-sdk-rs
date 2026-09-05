@@ -138,21 +138,18 @@ pub(crate) struct ApiErrorInner {
     pub error_type: String,
 }
 
-/// Strongly-typed view of the API's stable error-code taxonomy
-/// (`internal/server/errors.go` on the backend). Use this instead
-/// of substring-matching `ApiError::message` — the message text is
-/// human-readable and may change between releases; the code is
-/// part of the wire contract and never gets repurposed.
+/// Strongly-typed view of the API's stable error-code taxonomy.
+/// Match on this rather than on `ApiError::message`: the message is
+/// human-readable and may change between releases, while the code is
+/// part of the wire contract and is never repurposed.
 ///
-/// `Unknown` covers two cases: (a) the backend emitted a code this
-/// SDK version doesn't recognise yet (forward-compat — a new code
-/// shipped after the SDK was built), and (b) the backend response
-/// had no code field at all (legacy / non-canonical error path).
-/// In both cases the raw string is preserved on `ApiError::code` so
-/// callers can match on it if they need to.
+/// `Unknown` covers a code this SDK version does not recognise (one
+/// added after the SDK was built) and a response with no code field
+/// at all. In both cases the raw string is preserved on
+/// `ApiError::code` so callers can still match on it.
 ///
-/// Variant naming mirrors the Go constants 1:1 so a `grep` for
-/// `KEY_FROZEN_BY_BUDGET` finds matches across both repos.
+/// Each variant is the wire code in CamelCase, so
+/// `KEY_FROZEN_BY_BUDGET` is `KeyFrozenByBudget`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ErrorCode {
@@ -164,10 +161,9 @@ pub enum ErrorCode {
     KeyExpired,
     KeyRevokedByAdmin,
     KeyRevokedByOwner,
-    /// Partner GCP budget kill-switch fired — distinguishable from
-    /// a self-revoke or admin-revoke because the user's account is
-    /// fine, the partner's billing isn't. Remediation: contact the
-    /// partner to top up.
+    /// The partner's budget kill-switch fired. Unlike a self-revoke or
+    /// admin-revoke the user's account is fine; the partner's billing
+    /// is not, and the remedy is for the partner to top up.
     KeyFrozenByBudget,
     KeyPartnerRejected,
     SessionExpired,
@@ -199,7 +195,7 @@ pub enum ErrorCode {
     ProviderUnavailable,
     ProviderAuthFailed,
     ProviderInvalidRequest,
-    /// Moderation block. Framed as content, NOT as account-state —
+    /// Moderation block on the request content, not on account state:
     /// the user can retry with different content.
     ContentRejected,
     ModelNotAvailable,
@@ -221,8 +217,7 @@ pub enum ErrorCode {
     // Per-product paywall codes
     RecipeBoxPaywall,
 
-    /// Unrecognised code — either a newer-than-SDK code or a non-
-    /// canonical response with no code field. The raw string is on
+    /// Unrecognised or absent code; the raw string is on
     /// `ApiError::code`.
     Unknown,
 }

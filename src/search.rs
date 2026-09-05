@@ -429,11 +429,9 @@ pub struct SearchAnswerResponse {
 
 /// Request body for Google grounded search via Gemini.
 ///
-/// This is the *premium* search backend — quality is significantly higher
-/// than Brave for technical/news queries because it taps into Google's
-/// index, but billing is per-executed-query at $0.035 each. The model
-/// decides how many queries to run for a single user prompt; check
-/// `web_search_queries.len()` on the response to see the count.
+/// The premium search backend: Google's index rather than Brave's, billed
+/// per executed query at $0.035 each. The model decides how many queries one
+/// prompt becomes; `web_search_queries` on the response lists them.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct GoogleSearchRequest {
     /// Search query string. Free-form natural language; the model will
@@ -462,8 +460,8 @@ pub struct GoogleSearchSupport {
     /// Byte offset where this span ends (exclusive).
     pub end_index: i32,
 
-    /// The actual text span — included for resilience when the answer
-    /// has been streamed/transformed and indices no longer line up.
+    /// The text of the span, so a renderer can match by content when the
+    /// answer has been transformed and the byte offsets no longer apply.
     #[serde(default)]
     pub text: String,
 
@@ -484,14 +482,13 @@ pub struct GoogleSearchResponse {
     #[serde(default)]
     pub citations: Vec<GoogleSearchCitation>,
 
-    /// **ToS-required** HTML/CSS widget showing search-suggestion chips.
-    /// Google's grounding terms require this to be rendered alongside
-    /// any grounded response. Pass it through verbatim — do not modify.
+    /// HTML/CSS widget of search-suggestion chips. Google's grounding terms
+    /// require it to be rendered, unmodified, alongside any grounded response.
     #[serde(default)]
     pub search_entry_point: String,
 
-    /// The actual queries Gemini executed against Google Search.
-    /// Non-empty length is the BILLING UNIT on the backend.
+    /// The queries Gemini executed against Google Search; each one is a
+    /// billing unit.
     #[serde(default)]
     pub web_search_queries: Vec<String>,
 
@@ -540,10 +537,8 @@ impl Client {
     /// citations, the ToS-required search-entry-point widget, and the
     /// list of queries Gemini actually executed.
     ///
-    /// Premium pricing — caller's wallet is debited per executed query
-    /// ($0.035 each). Use `search_answer` (Brave-backed) for cheap
-    /// high-volume search; reach for this when answer quality matters
-    /// more than per-call cost.
+    /// Billed per executed query ($0.035 each). `search_answer` is the
+    /// Brave-backed alternative for cheap high-volume search.
     pub async fn google_search(&self, req: &GoogleSearchRequest) -> Result<GoogleSearchResponse> {
         let (resp, _meta) = self
             .post_json::<GoogleSearchRequest, GoogleSearchResponse>("/qai/v1/search/google", req)

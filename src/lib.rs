@@ -1,8 +1,15 @@
 //! Rust client SDK for the Quantum AI API.
 //!
-//! Supports text generation (with streaming), session chat, multi-agent orchestration,
-//! image/video/audio generation, embeddings, RAG search, compute provisioning,
-//! voice management, API key management, and model listing through a single API endpoint.
+//! One [`Client`] covers the whole gateway surface: chat and streaming
+//! ([`chat`], [`session`], [`media_sessions`]), agents and missions ([`agent`],
+//! [`agent_runtime`], [`missions`], [`cloudrun`], [`jobs`], [`batch`]),
+//! media generation ([`image`], [`video`], [`avatar`], [`audio`], [`voices`],
+//! [`mesh`], [`vision`]), realtime voice ([`realtime`]), retrieval
+//! ([`embeddings`], [`documents`], [`rag`], [`search`], [`scraper`], [`caches`],
+//! [`files`]), code and security scanning ([`scanner`], [`security`]), GPU
+//! compute and model deployments ([`compute`], [`inference`]), and account
+//! administration ([`account`], [`auth`], [`credits`], [`keys`], [`licenses`],
+//! [`models`], [`region`], [`contact`]).
 //!
 //! # Example
 //!
@@ -138,9 +145,13 @@ pub use auth::{
     AuthFirebaseRequest, AuthGoogleRequest, RevokeSessionResponse, VerifyKeyRequest,
     VerifyKeyResponse,
 };
+
+// Lifetime plan types
 pub use credits::{
     LifetimePlan, LifetimePlansResponse, LifetimePurchaseRequest, LifetimePurchaseResponse,
 };
+
+// Device, ephemeral and partner key types
 pub use keys::{
     DeviceKey, EphemeralKeyRequest, EphemeralKeyResponse, KeyUsageDay, KeyUsageModel,
     KeyUsageResponse, ListDeviceKeysResponse, PartnerKeyRequest, PartnerKeyResponse,
@@ -306,7 +317,7 @@ pub use compute::{
 pub use audio::RealtimeSttTokenResponse;
 pub use realtime::ElevenLabsProxyConfig;
 
-// RAG collection types added alongside the existing exports
+// RAG collection types
 pub use rag::{CollectionDetail, CollectionSearchResponse, DeleteCollectionResponse};
 
 // Error helpers

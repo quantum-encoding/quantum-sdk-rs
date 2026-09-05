@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiErrorBody, Error, Result};
 use crate::region::Region;
 
-/// Max retries for transient errors (502, 503, 429).
+/// Max retries for transient errors (429, 502, 503, 504).
 const MAX_RETRIES: u32 = 3;
 /// Initial backoff delay.
 const INITIAL_BACKOFF_MS: u64 = 500;
@@ -83,10 +83,10 @@ impl ClientBuilder {
         Self {
             api_key: api_key.into(),
             base_url: DEFAULT_BASE_URL.to_string(),
-            // 120s could abort long buffered media generation (image/video return
-            // a single JSON blob only when the provider finishes). 600s clears the
-            // backend's 5-minute media deadline so the server errors first.
-            // Streaming uses a separate no-timeout client.
+            // Buffered media generation (image/video) returns a single JSON blob
+            // only when the provider finishes; 600s outlasts the backend's
+            // 5-minute media deadline so the server errors first. Streaming uses
+            // a separate no-timeout client.
             timeout: Duration::from_secs(600),
             app: None,
             region: None,
@@ -100,11 +100,12 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the request timeout for non-streaming requests (default: 120s).
+    /// Sets the request timeout for non-streaming requests (default: 600s).
     ///
-    /// Media generation endpoints (video, dubbing, 3D) can take 1–5 minutes.
-    /// For these, use `Duration::from_secs(300)` or longer. Alternatively,
-    /// use the async jobs API (`create_job` / `poll_job`) which doesn't block.
+    /// The default outlasts the backend's 5-minute media deadline, so buffered
+    /// media generation (video, dubbing, 3D) fails server-side rather than
+    /// here. Lower it for latency-sensitive callers, or use the async jobs API
+    /// (`create_job` / `poll_job`) which doesn't block.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -125,7 +126,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Routes this client's gateway CHAT calls through a region
+    /// Routes this client's chat calls through a region
     /// (region-scoped inference routing — EU AI Act Art 50).
     ///
     /// The region rides `provider_options.region` on every chat request the
@@ -193,7 +194,8 @@ impl ClientBuilder {
 
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header.clone());
-        // Also send X-API-Key for proxies that claim the Authorization header (e.g. Cloudflare -> Cloud Run IAM).
+        // X-API-Key duplicates the credential for proxies that consume the
+        // Authorization header before it reaches the gateway.
         if let Ok(v) = HeaderValue::from_str(&self.api_key) {
             headers.insert("X-API-Key", v);
         }
@@ -604,7 +606,7 @@ impl Client {
 
     /// Sends a JSON POST request expecting an SSE stream response.
     /// Returns the raw reqwest::Response for the caller to read events from.
-    /// Uses a separate client without timeout -- cancellation is via drop.
+    /// Uses a separate client without timeout — cancellation is via drop.
     pub async fn post_stream_raw(
         &self,
         path: &str,

@@ -1,11 +1,11 @@
 //! Region-scoped inference routing.
 //!
 //! The gateway routes inference in-region when a region is attached to the
-//! work (EU AI Act Art 50 compliance shipped 2026-08-19): a key minted with
-//! a region scope routes every request made with it, and a chat request can
-//! override that scope for one call via `provider_options.region`. Regions
-//! pick the serving endpoints inside the ONE gateway host
-//! (`https://api.quantumencoding.ai`) — there is no region-per-hostname.
+//! work: a key minted with a region scope routes every request made with it,
+//! and a chat request can override that scope for one call via
+//! `provider_options.region`. Regions pick the serving endpoints inside the
+//! one gateway host (`https://api.quantumencoding.ai`); there is no
+//! region-per-hostname.
 //!
 //! Two places a region is expressed on the wire, both typed here:
 //!
@@ -13,10 +13,8 @@
 //! - per-chat override: [`crate::ChatRequest::region`] (chat only — the
 //!   agent endpoint routes by key scope by design)
 //!
-//! The backend accepts region ALIASES and silently degrades anything it
-//! doesn't recognize to unscoped legacy routing — never an error. [`Region::parse`]
-//! therefore rejects unknown values client-side instead of letting a typo
-//! route silently unscoped.
+//! [`Region::parse`] accepts the backend's aliases and rejects anything else
+//! client-side.
 
 use std::fmt;
 use std::str::FromStr;
@@ -48,9 +46,9 @@ impl Region {
 
     /// Parses a region, tolerating the aliases the backend accepts
     /// (`us`/`america`, `eu`/`eea`, `apac`/`asia-pacific`),
-    /// case-insensitively. Returns `None` for anything else — the backend
-    /// would degrade an unknown value to unscoped routing without an error,
-    /// so the SDK refuses it instead.
+    /// case-insensitively. Returns `None` for anything else: the backend
+    /// degrades an unknown value to unscoped routing without an error, so
+    /// the SDK refuses it instead.
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "americas" | "america" | "us" => Some(Region::Americas),

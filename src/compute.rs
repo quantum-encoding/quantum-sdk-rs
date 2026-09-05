@@ -732,7 +732,7 @@ impl Client {
 
     /// Queries compute billing from BigQuery via the QAI backend.
     ///
-    /// The gateway no longer registers `/qai/v1/compute/billing`; this call
+    /// The gateway does not serve `/qai/v1/compute/billing`; this call
     /// returns a 404. Read spend from
     /// [`Client::account_usage`](crate::Client::account_usage) instead.
     #[deprecated(

@@ -208,8 +208,14 @@ impl Client {
         Ok(resp)
     }
 
-    /// Polls a job until completion or timeout.
-    /// Returns the final status response.
+    /// Polls a job until it reports "completed" or "failed".
+    ///
+    /// Each attempt sleeps for `poll_interval` before checking, so the first
+    /// status read happens one interval after the call. If `max_attempts`
+    /// runs out, the result is `Ok` with a synthesised response whose status
+    /// is `"timeout"` and whose `error` says so — not an `Err`. Callers that
+    /// branch only on "completed"/"failed" must treat any other status as
+    /// unfinished.
     pub async fn poll_job(
         &self,
         job_id: &str,
