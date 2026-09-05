@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::error::Result;
 use crate::keys::StatusResponse;
+use crate::serde_util::null_as_default as deserialize_null_as_default;
 
 /// A compute instance template describing available GPU configurations.
 #[derive(Debug, Clone, Deserialize)]
@@ -297,6 +298,381 @@ pub struct BillingResponse {
     pub total_cost_usd: f64,
 }
 
+// ── Model deployments ───────────────────────────────────────────────────────
+
+/// A tested Model Garden deploy configuration from the catalogue.
+///
+/// Passing [`KnownModel::id`] as [`DeployModelRequest::model`] fills in the
+/// machine spec and region server-side, so a caller need not repeat them.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct KnownModel {
+    /// Short catalogue id.
+    #[serde(default)]
+    pub id: String,
+
+    /// Display name.
+    #[serde(default)]
+    pub name: String,
+
+    /// Model publisher.
+    #[serde(default)]
+    pub publisher: String,
+
+    /// Full `publishers/<x>/models/<y>@<variant>` path.
+    #[serde(default)]
+    pub model_path: String,
+
+    /// Machine type the model is verified on.
+    #[serde(default)]
+    pub machine_type: String,
+
+    /// Accelerator type the model is verified on.
+    #[serde(default)]
+    pub accelerator_type: String,
+
+    /// Number of accelerators.
+    #[serde(default)]
+    pub accelerator_count: i32,
+
+    /// Regions the configuration is known to deploy in.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub regions: Vec<String>,
+
+    /// Serving container image override, when the model needs a specific one.
+    #[serde(default)]
+    pub container_image: String,
+
+    /// VRAM the configuration provides, in GB.
+    #[serde(default)]
+    pub vram_gb: i32,
+
+    /// What the model is for.
+    #[serde(default)]
+    pub description: String,
+
+    /// Parameter count, as displayed (e.g. `"120B (12B active)"`).
+    #[serde(default)]
+    pub parameters: String,
+
+    /// Hourly price, enriched from the live billing catalogue at response
+    /// time.
+    #[serde(default)]
+    pub price_per_hour_usd: f64,
+}
+
+/// Response from `GET /qai/v1/compute/catalog`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ComputeCatalogResponse {
+    /// Curated, tested configurations with live pricing.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub verified_models: Vec<KnownModel>,
+
+    /// Models discovered dynamically from Model Garden. Absent when the
+    /// catalogue fetch failed — the verified list is still returned.
+    #[serde(default)]
+    pub discovered_models: Option<Vec<serde_json::Value>>,
+
+    /// When the dynamic catalogue was fetched, RFC3339.
+    #[serde(default)]
+    pub cached_at: Option<String>,
+
+    /// When the cached dynamic catalogue goes stale, RFC3339.
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// Request body for `POST /qai/v1/compute/deploy-model`.
+///
+/// The endpoint is two-phase: leave `confirmed` unset for a cost estimate that
+/// bills nothing, then resend the same request with `confirmed: true` to
+/// actually provision.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DeployModelRequest {
+    /// A catalogue [`KnownModel::id`], or a full Model Garden model path.
+    /// Required.
+    pub model: String,
+
+    /// Machine type. Filled in from the catalogue when `model` is a known id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub machine_type: Option<String>,
+
+    /// Accelerator type. Filled in from the catalogue when `model` is a known
+    /// id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accelerator_type: Option<String>,
+
+    /// Number of accelerators. Defaults to 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accelerator_count: Option<i32>,
+
+    /// Deploy region. Defaults to the catalogue's first known-good region, or
+    /// `us-east1`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+
+    /// How long to hold the deployment. Raised to the 2-hour minimum when
+    /// lower.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_hours: Option<i32>,
+
+    /// Auto-scaling minimum. Defaults to 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_replicas: Option<i32>,
+
+    /// Auto-scaling maximum. Defaults to 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_replicas: Option<i32>,
+
+    /// Let other authenticated users call this deployment's inference
+    /// endpoint. They are billed per token; the hourly cost stays with the
+    /// owner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public: Option<bool>,
+
+    /// Set to `true` to provision. Unset returns an estimate and bills
+    /// nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmed: Option<bool>,
+}
+
+/// The estimate returned when a deploy request is not confirmed.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DeployModelEstimate {
+    /// Hourly price including margin.
+    #[serde(default)]
+    pub cost_per_hour_usd: f64,
+
+    /// Total for the requested duration.
+    #[serde(default)]
+    pub total_estimate_usd: f64,
+
+    /// The same total in ticks.
+    #[serde(default)]
+    pub total_ticks: i64,
+
+    /// Duration the estimate covers, after the 2-hour minimum is applied.
+    #[serde(default)]
+    pub duration_hours: i32,
+
+    /// Display name resolved for the model.
+    #[serde(default)]
+    pub model_display_name: String,
+
+    /// Resolved full model path.
+    #[serde(default)]
+    pub model: String,
+
+    /// Resolved machine type.
+    #[serde(default)]
+    pub machine_type: String,
+
+    /// Resolved accelerator type.
+    #[serde(default)]
+    pub accelerator_type: String,
+
+    /// Resolved accelerator count.
+    #[serde(default)]
+    pub accelerator_count: i32,
+
+    /// Resolved region.
+    #[serde(default)]
+    pub region: String,
+
+    /// How to proceed — `"resubmit with confirmed:true to deploy"`.
+    #[serde(default)]
+    pub note: String,
+}
+
+/// The acceptance returned when a deploy request is confirmed. Provisioning
+/// runs asynchronously; poll [`Client::compute_deployment`] until the status
+/// reaches `ready`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DeployModelAccepted {
+    /// The deployment to poll.
+    #[serde(default)]
+    pub deployment_id: String,
+
+    /// Status at acceptance — `"provisioning"`.
+    #[serde(default)]
+    pub status: String,
+
+    /// Display name resolved for the model.
+    #[serde(default)]
+    pub model_display_name: String,
+
+    /// Hourly price including margin.
+    #[serde(default)]
+    pub cost_per_hour_usd: f64,
+
+    /// Amount deducted up front, refunded if provisioning fails.
+    #[serde(default)]
+    pub total_cost_usd: f64,
+
+    /// RFC3339 time the deployment is torn down.
+    #[serde(default)]
+    pub expires_at: String,
+
+    /// Provider long-running operation backing the provision.
+    #[serde(default)]
+    pub operation: String,
+
+    /// Where to poll for status.
+    #[serde(default)]
+    pub note: String,
+}
+
+/// A model deployment record.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ModelDeployment {
+    /// Deployment identifier.
+    #[serde(default)]
+    pub id: String,
+
+    /// Owning user.
+    #[serde(default)]
+    pub user_id: String,
+
+    /// Full model path deployed.
+    #[serde(default)]
+    pub model: String,
+
+    /// Display name for the model.
+    #[serde(default)]
+    pub model_display_name: String,
+
+    /// Machine type.
+    #[serde(default)]
+    pub machine_type: String,
+
+    /// Accelerator type.
+    #[serde(default)]
+    pub accelerator_type: String,
+
+    /// Number of accelerators.
+    #[serde(default)]
+    pub accelerator_count: i32,
+
+    /// Deploy region.
+    #[serde(default)]
+    pub region: String,
+
+    /// Hours the deployment was booked for.
+    #[serde(default)]
+    pub duration_hours: i32,
+
+    /// Lifecycle status (`provisioning`, `deploying`, `ready`, `terminated`,
+    /// `failed`).
+    #[serde(default)]
+    pub status: String,
+
+    /// Provider long-running operation name.
+    #[serde(default)]
+    pub vertex_operation: String,
+
+    /// Endpoint URL once the deployment is serving.
+    #[serde(default)]
+    pub endpoint_url: String,
+
+    /// Provider endpoint id.
+    #[serde(default)]
+    pub endpoint_id: String,
+
+    /// Provider model id on the endpoint.
+    #[serde(default)]
+    pub model_id: String,
+
+    /// Failure reason, when the deployment failed.
+    #[serde(default, rename = "error")]
+    pub error_message: String,
+
+    /// Hourly price including margin.
+    #[serde(default)]
+    pub cost_per_hour_usd: f64,
+
+    /// Total charged in ticks.
+    #[serde(default)]
+    pub total_cost_ticks: i64,
+
+    /// Margin applied over the raw hardware price, as a percentage.
+    #[serde(default)]
+    pub margin_pct: f64,
+
+    /// Auto-scaling minimum.
+    #[serde(default)]
+    pub min_replicas: i32,
+
+    /// Auto-scaling maximum.
+    #[serde(default)]
+    pub max_replicas: i32,
+
+    /// Whether other authenticated users may run inference against it.
+    #[serde(default)]
+    pub public: bool,
+
+    /// Partner the spend is attributed to, or `"direct"`.
+    #[serde(default)]
+    pub consumer: String,
+
+    /// RFC3339 creation timestamp.
+    #[serde(default)]
+    pub created_at: String,
+
+    /// RFC3339 time the deployment became ready.
+    #[serde(default)]
+    pub ready_at: Option<String>,
+
+    /// RFC3339 teardown time.
+    #[serde(default)]
+    pub expires_at: String,
+
+    /// RFC3339 time the deployment was torn down.
+    #[serde(default)]
+    pub terminated_at: Option<String>,
+}
+
+/// Response from `GET /qai/v1/compute/deployments`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DeploymentsResponse {
+    /// The caller's deployments.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub deployments: Vec<ModelDeployment>,
+}
+
+/// Request body for `POST /qai/v1/compute/deployments/{id}/extend`.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ExtendDeploymentRequest {
+    /// Hours to add. Values at or below zero become 1.
+    pub hours: i32,
+}
+
+/// Response from `POST /qai/v1/compute/deployments/{id}/extend`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ExtendDeploymentResponse {
+    /// The deployment that was extended.
+    #[serde(default)]
+    pub deployment_id: String,
+
+    /// RFC3339 teardown time after the extension.
+    #[serde(default)]
+    pub new_expiry: String,
+
+    /// Hours actually added.
+    #[serde(default)]
+    pub extended_hours: i32,
+
+    /// Amount charged for the extension.
+    #[serde(default)]
+    pub cost_usd: f64,
+}
+
+/// Response from `DELETE /qai/v1/compute/deployments/{id}`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DeploymentDeleteResponse {
+    /// Status after teardown — `"terminated"`.
+    #[serde(default)]
+    pub status: String,
+}
+
 impl Client {
     /// Lists available compute templates (GPU configurations and pricing).
     pub async fn compute_templates(&self) -> Result<TemplatesResponse> {
@@ -355,10 +731,172 @@ impl Client {
     }
 
     /// Queries compute billing from BigQuery via the QAI backend.
+    ///
+    /// The gateway no longer registers `/qai/v1/compute/billing`; this call
+    /// returns a 404. Read spend from
+    /// [`Client::account_usage`](crate::Client::account_usage) instead.
+    #[deprecated(
+        since = "0.8.2",
+        note = "the gateway retired /qai/v1/compute/billing; use account_usage instead"
+    )]
     pub async fn compute_billing(&self, req: &BillingRequest) -> Result<BillingResponse> {
         let (resp, _meta) = self
             .post_json::<BillingRequest, BillingResponse>("/qai/v1/compute/billing", req)
             .await?;
         Ok(resp)
+    }
+
+    // ── Model deployments ───────────────────────────────────────────────────
+
+    /// Lists deployable models: curated configurations with live pricing, plus
+    /// whatever the dynamic Model Garden catalogue reports.
+    ///
+    /// `GET /qai/v1/compute/catalog`
+    pub async fn compute_catalog(&self) -> Result<ComputeCatalogResponse> {
+        let (resp, _meta) = self
+            .get_json::<ComputeCatalogResponse>("/qai/v1/compute/catalog")
+            .await?;
+        Ok(resp)
+    }
+
+    /// Prices a model deployment without billing for it.
+    ///
+    /// Sends the request with `confirmed` forced off, so the gateway answers
+    /// with an estimate and the resolved machine spec. Deploying needs
+    /// per-account approval, which is refused before any spend.
+    ///
+    /// `POST /qai/v1/compute/deploy-model`
+    pub async fn compute_deploy_model_estimate(
+        &self,
+        req: &DeployModelRequest,
+    ) -> Result<DeployModelEstimate> {
+        let mut req = req.clone();
+        req.confirmed = None;
+        let (resp, _meta) = self
+            .post_json::<DeployModelRequest, DeployModelEstimate>(
+                "/qai/v1/compute/deploy-model",
+                &req,
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    /// Provisions a model deployment, deducting the full duration up front.
+    ///
+    /// Sends the request with `confirmed` forced on. Provisioning is
+    /// asynchronous — poll [`Client::compute_deployment`] until the status is
+    /// `ready`, then call it through
+    /// [`Client::inference`](crate::Client::inference). A failed provision is
+    /// refunded.
+    ///
+    /// `POST /qai/v1/compute/deploy-model`
+    pub async fn compute_deploy_model(
+        &self,
+        req: &DeployModelRequest,
+    ) -> Result<DeployModelAccepted> {
+        let mut req = req.clone();
+        req.confirmed = Some(true);
+        let (resp, _meta) = self
+            .post_json::<DeployModelRequest, DeployModelAccepted>(
+                "/qai/v1/compute/deploy-model",
+                &req,
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    /// Lists the caller's model deployments.
+    ///
+    /// `GET /qai/v1/compute/deployments`
+    pub async fn compute_deployments(&self) -> Result<DeploymentsResponse> {
+        let (resp, _meta) = self
+            .get_json::<DeploymentsResponse>("/qai/v1/compute/deployments")
+            .await?;
+        Ok(resp)
+    }
+
+    /// Reads one model deployment, including its endpoint URL once ready.
+    ///
+    /// `GET /qai/v1/compute/deployments/{id}`
+    pub async fn compute_deployment(&self, id: &str) -> Result<ModelDeployment> {
+        let (resp, _meta) = self
+            .get_json::<ModelDeployment>(&format!("/qai/v1/compute/deployments/{id}"))
+            .await?;
+        Ok(resp)
+    }
+
+    /// Extends a ready deployment's lifetime, billing for the extra hours.
+    ///
+    /// Only a `ready` deployment can be extended.
+    ///
+    /// `POST /qai/v1/compute/deployments/{id}/extend`
+    pub async fn compute_deployment_extend(
+        &self,
+        id: &str,
+        hours: i32,
+    ) -> Result<ExtendDeploymentResponse> {
+        let req = ExtendDeploymentRequest { hours };
+        let (resp, _meta) = self
+            .post_json::<ExtendDeploymentRequest, ExtendDeploymentResponse>(
+                &format!("/qai/v1/compute/deployments/{id}/extend"),
+                &req,
+            )
+            .await?;
+        Ok(resp)
+    }
+
+    /// Tears a model deployment down early. The remaining hours are not
+    /// refunded.
+    ///
+    /// `DELETE /qai/v1/compute/deployments/{id}`
+    pub async fn compute_deployment_delete(&self, id: &str) -> Result<DeploymentDeleteResponse> {
+        let (resp, _meta) = self
+            .delete_json::<DeploymentDeleteResponse>(&format!("/qai/v1/compute/deployments/{id}"))
+            .await?;
+        Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod deployment_tests {
+    use super::*;
+
+    #[test]
+    fn a_known_model_id_carries_no_machine_spec() {
+        let req = DeployModelRequest {
+            model: "nemotron-3-super-120b".into(),
+            duration_hours: Some(4),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(json["model"], "nemotron-3-super-120b");
+        assert_eq!(json["duration_hours"], 4);
+        assert!(json.get("machine_type").is_none());
+        assert!(json.get("accelerator_type").is_none());
+        assert!(json.get("confirmed").is_none());
+    }
+
+    #[test]
+    fn deployment_maps_the_error_key_to_error_message() {
+        let deployment: ModelDeployment = serde_json::from_str(
+            r#"{"id":"d1","user_id":"u1","model":"publishers/x/models/y",
+                "status":"failed","error":"quota exhausted","cost_per_hour_usd":12.5}"#,
+        )
+        .expect("decode");
+        assert_eq!(deployment.error_message, "quota exhausted");
+        assert_eq!(deployment.status, "failed");
+        assert!(deployment.ready_at.is_none());
+    }
+
+    #[test]
+    fn catalog_decodes_without_the_dynamic_half() {
+        let catalog: ComputeCatalogResponse = serde_json::from_str(
+            r#"{"verified_models":[{"id":"m1","name":"M1","machine_type":"a4-highgpu-8g",
+                                    "regions":null,"price_per_hour_usd":30.0}]}"#,
+        )
+        .expect("decode");
+        assert_eq!(catalog.verified_models.len(), 1);
+        assert!(catalog.verified_models[0].regions.is_empty());
+        assert!(catalog.discovered_models.is_none());
     }
 }

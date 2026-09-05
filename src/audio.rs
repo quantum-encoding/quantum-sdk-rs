@@ -1132,4 +1132,69 @@ impl Client {
         let (resp, _) = self.delete_json::<serde_json::Value>(&path).await?;
         Ok(resp)
     }
+
+    /// Mints a single-use token for a realtime speech-to-text WebSocket.
+    ///
+    /// The client then connects straight to
+    /// [`RealtimeSttTokenResponse::ws_endpoint`] with `?token=<token>` — the
+    /// gateway brokers only the credential, so there is no proxy hop. The
+    /// token has a 15-minute TTL and is consumed on use; the session is billed
+    /// as a flat per-session estimate when the token is minted.
+    ///
+    /// `POST /qai/v1/audio/stt/realtime-token`
+    pub async fn audio_stt_realtime_token(&self) -> Result<RealtimeSttTokenResponse> {
+        let (mut resp, meta) = self
+            .post_json_empty::<RealtimeSttTokenResponse>("/qai/v1/audio/stt/realtime-token")
+            .await?;
+        if resp.cost_ticks == 0 {
+            resp.cost_ticks = meta.cost_ticks;
+        }
+        if resp.request_id.is_empty() {
+            resp.request_id = meta.request_id;
+        }
+        Ok(resp)
+    }
+}
+
+/// Response from `POST /qai/v1/audio/stt/realtime-token`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RealtimeSttTokenResponse {
+    /// Single-use realtime credential. Pass it as the `token` query parameter
+    /// on the WebSocket connect.
+    #[serde(default)]
+    pub token: String,
+
+    /// Token lifetime in seconds (900 — 15 minutes).
+    #[serde(default)]
+    pub expires_in: i64,
+
+    /// WebSocket endpoint the token authenticates against.
+    #[serde(default)]
+    pub ws_endpoint: String,
+
+    /// Ticks charged for the session estimate.
+    #[serde(default)]
+    pub cost_ticks: i64,
+
+    /// Gateway request identifier.
+    #[serde(default)]
+    pub request_id: String,
+}
+
+#[cfg(test)]
+mod realtime_stt_tests {
+    use super::*;
+
+    #[test]
+    fn token_response_carries_the_direct_endpoint() {
+        let resp: RealtimeSttTokenResponse = serde_json::from_str(
+            r#"{"token":"tok_abc","expires_in":900,
+                "ws_endpoint":"wss://api.elevenlabs.io/v1/speech-to-text/realtime",
+                "cost_ticks":6000000,"request_id":"req_1"}"#,
+        )
+        .expect("decode");
+        assert_eq!(resp.expires_in, 900);
+        assert!(resp.ws_endpoint.starts_with("wss://"));
+        assert_eq!(resp.cost_ticks, 6_000_000);
+    }
 }

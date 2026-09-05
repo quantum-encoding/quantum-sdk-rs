@@ -23,27 +23,36 @@
 
 pub mod account;
 pub mod agent;
+pub mod agent_runtime;
 pub mod audio;
 pub mod auth;
 pub mod avatar;
 pub mod batch;
+pub mod caches;
 pub mod chat;
 pub mod client;
+pub mod cloudrun;
 pub mod compute;
 pub mod contact;
 pub mod credits;
 pub mod documents;
 pub mod embeddings;
 pub mod error;
+pub mod files;
 pub mod image;
+pub mod inference;
 pub mod jobs;
 pub mod keys;
+pub mod licenses;
+pub mod managed_agents;
+pub mod media_sessions;
 pub mod mesh;
 pub mod missions;
 pub mod models;
 pub mod rag;
 pub mod realtime;
 pub mod region;
+pub mod scanner;
 pub mod scraper;
 pub mod search;
 pub mod security;
@@ -243,10 +252,62 @@ pub use missions::{
 
 // Security types
 pub use security::{
-    SecurityAssessment, SecurityBlocklistEntry, SecurityBlocklistResponse, SecurityCheckResponse,
-    SecurityFinding, SecurityReportRequest, SecurityReportResponse, SecurityScanHtmlRequest,
-    SecurityScanResponse, SecurityScanUrlRequest,
+    CodeScanFinding, CodeScanReport, SecurityAssessment, SecurityBlocklistEntry,
+    SecurityBlocklistResponse, SecurityCheckResponse, SecurityFinding, SecurityReportRequest,
+    SecurityReportResponse, SecurityScanCodeRequest, SecurityScanHtmlRequest, SecurityScanResponse,
+    SecurityScanUrlRequest,
 };
+
+// Media session types
+pub use media_sessions::{
+    MediaSession, MediaSessionChatRequest, MediaSessionChatResponse, MediaSessionCreateRequest,
+    MediaSessionDeleteResponse, MediaSessionListResponse, MediaSessionTurn,
+};
+
+// Multimodal file upload types
+pub use files::FileUploadResponse;
+
+// Gemini context cache types
+pub use caches::{CacheCreateRequest, CacheCreateResponse, CacheDeleteResponse};
+
+// Licence types
+pub use licenses::{
+    License, LicenseJwk, LicensePublicKeyResponse, LicenseRevocationsResponse, LicensesResponse,
+};
+
+// Code scanner types
+pub use scanner::{
+    AuditFileResult, AuditJobResponse, AuditResult, Blueprint, BlueprintFunction, BlueprintModule,
+    BlueprintType, CallEdge, CodeField, CodeFunction, CodeModule, CodeType, CodebaseGraph,
+    ConventionDiff, DiffRequest, DiffResult, FileStatus, ScanDeleteResponse, ScanListResponse,
+    ScanRequest, ScanResult, ScanStats, ScanTypeDetail, ScanTypeListResponse, ScanTypeSummary,
+    VerifyRequest, VerifyResult, VulnerabilityScanOptions, VulnerabilityScanRequest,
+};
+
+// Agent-runtime types
+pub use agent_runtime::{
+    AppendEventRequest, OverlayConfig, RuntimeAgent, RuntimeAgentRequest,
+    RuntimeAgentUpdateResponse, RuntimeAgentsResponse, RuntimeEnvironment,
+    RuntimeEnvironmentRequest, RuntimeEnvironmentsResponse, RuntimeEvent, RuntimeEventStream,
+    RuntimeOkResponse, RuntimeSession, RuntimeTool, StageWorkspaceResponse, StartSessionRequest,
+};
+
+// Sandbox-backed orchestration types
+pub use cloudrun::{CloudRunEvent, CloudRunRequest, CloudRunWorker};
+
+// Model-deployment types
+pub use compute::{
+    ComputeCatalogResponse, DeployModelAccepted, DeployModelEstimate, DeployModelRequest,
+    DeploymentDeleteResponse, DeploymentsResponse, ExtendDeploymentRequest,
+    ExtendDeploymentResponse, KnownModel, ModelDeployment,
+};
+
+// Realtime speech-to-text token + ElevenLabs proxy types
+pub use audio::RealtimeSttTokenResponse;
+pub use realtime::ElevenLabsProxyConfig;
+
+// RAG collection types added alongside the existing exports
+pub use rag::{CollectionDetail, CollectionSearchResponse, DeleteCollectionResponse};
 
 // Error helpers
 pub use error::{is_auth_error, is_not_found_error, is_rate_limit_error};

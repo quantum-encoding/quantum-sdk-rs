@@ -178,6 +178,12 @@ pub struct ScreenshotJobResponse {
 
 impl Client {
     /// Submits a doc-scraping job. Returns a job ID for polling.
+    ///
+    /// The gateway retired `/qai/v1/scraper/*`; this call returns a 404.
+    #[deprecated(
+        since = "0.8.2",
+        note = "the gateway retired the /qai/v1/scraper routes"
+    )]
     pub async fn scrape(&self, req: &ScrapeRequest) -> Result<ScrapeResponse> {
         let (resp, _meta) = self
             .post_json::<ScrapeRequest, ScrapeResponse>("/qai/v1/scraper/scrape", req)
@@ -187,6 +193,12 @@ impl Client {
 
     /// Takes screenshots of URLs. For <=5 URLs, returns results inline.
     /// For >5, returns a job ID for async processing.
+    ///
+    /// The gateway retired `/qai/v1/scraper/*`; this call returns a 404.
+    #[deprecated(
+        since = "0.8.2",
+        note = "the gateway retired the /qai/v1/scraper routes"
+    )]
     pub async fn screenshot(&self, req: &ScreenshotRequest) -> Result<ScreenshotResponse> {
         let (resp, _meta) = self
             .post_json::<ScreenshotRequest, ScreenshotResponse>("/qai/v1/scraper/screenshot", req)

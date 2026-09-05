@@ -503,6 +503,23 @@ impl RealtimeSender {
         self.send_raw(&serde_json::to_string(&msg)?).await
     }
 
+    /// Send one base64-encoded PCM chunk on an ElevenLabs conversational
+    /// socket opened with
+    /// [`Client::elevenlabs_connect`].
+    ///
+    /// That protocol takes microphone audio as `user_audio_chunk`, not the
+    /// `input_audio_buffer.append` frame [`RealtimeSender::send_audio`] sends.
+    pub async fn send_elevenlabs_audio(&self, base64_pcm: &str) -> Result<()> {
+        let msg = serde_json::json!({ "user_audio_chunk": base64_pcm });
+        self.send_raw(&serde_json::to_string(&msg)?).await
+    }
+
+    /// Send an arbitrary JSON frame — the escape hatch for provider protocols
+    /// the typed helpers do not cover.
+    pub async fn send_json(&self, value: &serde_json::Value) -> Result<()> {
+        self.send_raw(&serde_json::to_string(value)?).await
+    }
+
     /// Close the WebSocket connection gracefully.
     pub async fn close(self) -> Result<()> {
         let mut sink = self.sink.into_inner();
@@ -601,11 +618,169 @@ fn parse_event(text: &str) -> RealtimeEvent {
     }
 }
 
+// ── ElevenLabs conversational proxy ──
+
+/// Connection parameters for the ElevenLabs conversational-voice proxy.
+///
+/// Every field is optional: the gateway falls back to its own default voice
+/// and model, and creates a conversational agent on the fly when `agent_id` is
+/// absent.
+#[derive(Debug, Clone, Default)]
+pub struct ElevenLabsProxyConfig {
+    /// ElevenLabs voice id to speak with.
+    pub voice_id: Option<String>,
+
+    /// ElevenLabs model id.
+    pub model: Option<String>,
+
+    /// An existing conversational agent to connect to. Omit to have the
+    /// gateway create one for this session.
+    pub agent_id: Option<String>,
+}
+
+impl ElevenLabsProxyConfig {
+    /// Renders the config as the proxy's query string (empty when nothing is
+    /// set).
+    fn query(&self) -> String {
+        let mut params = Vec::new();
+        if let Some(ref voice_id) = self.voice_id {
+            params.push(format!("voice_id={}", urlencoding::encode(voice_id)));
+        }
+        if let Some(ref model) = self.model {
+            params.push(format!("model={}", urlencoding::encode(model)));
+        }
+        if let Some(ref agent_id) = self.agent_id {
+            params.push(format!("agent_id={}", urlencoding::encode(agent_id)));
+        }
+        if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        }
+    }
+}
+
+impl Client {
+    /// Opens an ElevenLabs conversational voice session through the gateway
+    /// proxy.
+    ///
+    /// The gateway holds the ElevenLabs credential, reserves one funded minute
+    /// up front, and meters the session minute by minute, so the connection
+    /// closes when the balance runs out.
+    ///
+    /// The frames on this socket are ElevenLabs' conversational protocol, not
+    /// the xAI/OpenAI realtime one: send microphone audio with
+    /// [`RealtimeSender::send_elevenlabs_audio`] and anything else with
+    /// [`RealtimeSender::send_json`]. Incoming frames the shared parser does
+    /// not recognise arrive as [`RealtimeEvent::Unknown`] carrying the raw
+    /// JSON.
+    ///
+    /// `GET /qai/v1/realtime/elevenlabs` (WebSocket upgrade)
+    pub async fn elevenlabs_connect(
+        &self,
+        config: &ElevenLabsProxyConfig,
+    ) -> Result<(RealtimeSender, RealtimeReceiver)> {
+        let path = format!("/qai/v1/realtime/elevenlabs{}", config.query());
+        self.connect_gateway_websocket(&path).await
+    }
+
+    /// Opens a WebSocket to a gateway path, carrying this client's credentials
+    /// on the handshake.
+    async fn connect_gateway_websocket(
+        &self,
+        path: &str,
+    ) -> Result<(RealtimeSender, RealtimeReceiver)> {
+        let base = self.base_url();
+        let ws_base = if let Some(rest) = base.strip_prefix("https://") {
+            format!("wss://{rest}")
+        } else if let Some(rest) = base.strip_prefix("http://") {
+            format!("ws://{rest}")
+        } else {
+            return Err(Error::Api(ApiError {
+                status_code: 0,
+                code: "invalid_base_url".into(),
+                message: format!("Cannot convert base URL to WebSocket: {base}"),
+                request_id: String::new(),
+            }));
+        };
+
+        let host = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_string();
+
+        let auth = self.auth_header().to_str().unwrap_or("").to_string();
+        let raw_token = auth.strip_prefix("Bearer ").unwrap_or(&auth);
+
+        let request = Request::builder()
+            .uri(format!("{ws_base}{path}"))
+            .header("Host", &host)
+            .header("Authorization", &auth)
+            .header("X-API-Key", raw_token)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header(
+                "Sec-WebSocket-Key",
+                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+            )
+            .body(())
+            .map_err(|e| {
+                Error::Api(ApiError {
+                    status_code: 0,
+                    code: "websocket_request".into(),
+                    message: format!("Failed to build WebSocket request: {e}"),
+                    request_id: String::new(),
+                })
+            })?;
+
+        let (ws_stream, _response) = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            tokio_tungstenite::connect_async(request),
+        )
+        .await
+        .map_err(|_| {
+            Error::Api(ApiError {
+                status_code: 0,
+                code: "timeout".into(),
+                message: "WebSocket connection timed out (15s)".into(),
+                request_id: String::new(),
+            })
+        })?
+        .map_err(Error::WebSocket)?;
+
+        let (sink, stream) = ws_stream.split();
+        Ok((
+            RealtimeSender {
+                sink: tokio::sync::Mutex::new(sink),
+            },
+            RealtimeReceiver { stream },
+        ))
+    }
+}
+
 // ── Tests ──
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elevenlabs_config_renders_only_the_fields_that_are_set() {
+        let empty = ElevenLabsProxyConfig::default();
+        assert_eq!(empty.query(), "");
+
+        let config = ElevenLabsProxyConfig {
+            voice_id: Some("21m00Tcm4TlvDq8ikWAM".into()),
+            agent_id: Some("agent 7".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.query(),
+            "?voice_id=21m00Tcm4TlvDq8ikWAM&agent_id=agent%207"
+        );
+    }
 
     #[test]
     fn default_config() {
