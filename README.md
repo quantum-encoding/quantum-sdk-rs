@@ -165,9 +165,10 @@ while let Some(event) = stream.next().await {
 | Scraper | 2 | Doc scraping + screenshots |
 | Jobs | 3 | Async job management |
 | Compute | 7 | GPU/CPU rental (admin-approved accounts only) |
-| Keys | 3 | API key management |
-| Account | 3 | Balance, usage, summary |
-| Credits | 6 | Packs, tiers, lifetime, purchase |
+| Auth | 5 | Apple, Google and Firebase sign-in, key verification, sign-out |
+| Keys | 8 | Create, list, revoke, rotate, usage, device, ephemeral and partner keys |
+| Account | 5 | Balance, usage, summary, deletion |
+| Credits | 8 | Packs, tiers, purchase, lifetime plans |
 | Batch | 4 | 50% discount batch processing |
 | Realtime | 3 | Voice sessions |
 | Models | 2 | Model list + pricing |
@@ -183,6 +184,34 @@ let client = Client::new("qai_k_your_key_here");
 The SDK sends it as the `X-API-Key` header. Both `qai_...` (primary) and `qai_k_...` (scoped) keys are supported. You can also use `Authorization: Bearer <key>`.
 
 Get your API key at [cosmicduck.dev](https://cosmicduck.dev).
+
+### Signing a person in (no developer key)
+
+An app that signs its user in never holds a developer key. Exchange the
+identity token from Google, Apple or Firebase for a session, then build the
+client on the session token — it is the credential for everything after,
+and the response also carries the account's default API key for clients
+that persist a key instead.
+
+```rust
+use quantum_sdk::{AuthGoogleRequest, Client};
+
+let bootstrap = Client::new("unauthenticated");
+let session = bootstrap.auth_google(&AuthGoogleRequest {
+    id_token: google_id_token,
+    client_id: GOOGLE_OAUTH_CLIENT_ID.into(),
+    device_id: None,
+}).await?;
+
+let client = Client::new(session.token);
+// ... chat, images, audio — billed to the signed-in account.
+
+client.revoke_session().await?; // sign out
+```
+
+`auth_apple` and `auth_firebase` answer with the same `AuthResponse`. A
+service that accepts a customer's `qai_k_` key can resolve its owner with
+`verify_key`.
 
 ## Pricing
 
