@@ -198,14 +198,14 @@ impl Stream for AgentStream {
     }
 }
 
-/// Converts a byte stream into a stream of parsed [`AgentStreamEvent`]s.
-fn sse_to_agent_events<S>(byte_stream: S) -> impl Stream<Item = AgentStreamEvent> + Send
+/// Splits a byte stream into newline-delimited lines, trailing `\r` stripped.
+fn sse_lines<S>(byte_stream: S) -> impl Stream<Item = String> + Send
 where
     S: Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
 {
     let pinned_stream = Box::pin(byte_stream);
 
-    let line_stream = futures_util::stream::unfold(
+    futures_util::stream::unfold(
         (pinned_stream, String::new()),
         |(mut stream, mut buffer)| async move {
             use futures_util::StreamExt;
@@ -230,9 +230,37 @@ where
                 }
             }
         },
-    );
+    )
+}
 
-    let pinned_lines = Box::pin(line_stream);
+/// Yields the payload of each SSE `data:` line, dropping the `[DONE]`
+/// sentinel and every non-data line. Shared by the surfaces whose SSE events
+/// are typed rather than the loose [`AgentStreamEvent`] shape.
+pub(crate) fn sse_data_payloads<S>(byte_stream: S) -> impl Stream<Item = String> + Send
+where
+    S: Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+{
+    let pinned_lines = Box::pin(sse_lines(byte_stream));
+    futures_util::stream::unfold(pinned_lines, |mut lines| async move {
+        use futures_util::StreamExt;
+        loop {
+            let line = lines.next().await?;
+            if let Some(payload) = line.strip_prefix("data: ") {
+                if payload == "[DONE]" {
+                    continue;
+                }
+                return Some((payload.to_string(), lines));
+            }
+        }
+    })
+}
+
+/// Converts a byte stream into a stream of parsed [`AgentStreamEvent`]s.
+fn sse_to_agent_events<S>(byte_stream: S) -> impl Stream<Item = AgentStreamEvent> + Send
+where
+    S: Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+{
+    let pinned_lines = Box::pin(sse_lines(byte_stream));
     futures_util::stream::unfold(pinned_lines, |mut lines| async move {
         use futures_util::StreamExt;
         loop {
@@ -268,6 +296,15 @@ where
             }
         }
     })
+}
+
+impl AgentStream {
+    /// Wraps an SSE response body as a stream of [`AgentStreamEvent`]s.
+    pub(crate) fn from_response(resp: reqwest::Response) -> Self {
+        AgentStream {
+            inner: Box::pin(sse_to_agent_events(resp.bytes_stream())),
+        }
+    }
 }
 
 impl Client {

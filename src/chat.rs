@@ -408,7 +408,7 @@ pub struct ChatUsage {
     /// Input tokens served from the provider's prompt cache, billed
     /// at the (lower) cached rate. Omitted on responses with no
     /// cache hit. Backend wire shape: `cached_tokens` (i32);
-    /// promoted to Option<i64> here for headroom on future
+    /// promoted to `Option<i64>` here for headroom on future
     /// long-cache scenarios (multi-hour video transcripts, etc.).
     /// Multi-turn billing audits reconcile by computing
     /// (non-cached) input_tokens vs (cached) cached_tokens — both
