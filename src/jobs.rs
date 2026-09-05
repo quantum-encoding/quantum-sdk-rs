@@ -268,7 +268,7 @@ impl Client {
     ///
     /// Useful for long-running models (e.g. Opus) where synchronous `/qai/v1/chat`
     /// may time out. Params are the same shape as [`ChatRequest`].
-    /// Use [`stream_job()`] or [`poll_job()`] to get the result.
+    /// Use [`Client::stream_job`] or [`Client::poll_job`] to get the result.
     pub async fn chat_job(&self, req: &ChatRequest) -> Result<JobCreateResponse> {
         let params = serde_json::to_value(req)?;
         let job_req = JobCreateRequest {
