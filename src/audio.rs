@@ -131,6 +131,15 @@ pub struct MusicResponse {
     #[serde(default)]
     pub model: String,
 
+    /// Length actually generated, when the provider reports it.
+    ///
+    /// Music is duration-metered — Lyria per 30 seconds, ElevenLabs per
+    /// minute — and settlement prefers this over the requested length, so it
+    /// is the basis of `cost_ticks`. `None` when the provider reports no
+    /// length; never 0, which would claim a measured empty track.
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
+
     /// Total cost in ticks.
     #[serde(default)]
     pub cost_ticks: i64,
@@ -1448,5 +1457,32 @@ mod tests {
             None,
         );
         assert!(matches!(conflict, Err(Error::Api(e)) if e.message.contains("v2")));
+    }
+
+    /// Music is duration-metered, so the generated length is the basis of the
+    /// charge and has to survive the wire.
+    #[test]
+    fn music_receipt_carries_the_generated_duration() {
+        let r: MusicResponse = serde_json::from_str(
+            r#"{"audio_clips":[{"base64":"SUQz","format":"mp3","size_bytes":2941184,"index":0}],
+                "model":"lyria-002","duration_seconds":184.0,
+                "cost_ticks":1840000000,"balance_after":57,
+                "request_id":"qai_req_bb31f907-4c1"}"#,
+        )
+        .expect("deserialise");
+        assert_eq!(r.duration_seconds, Some(184.0));
+    }
+
+    /// A provider that reports no length leaves it absent, not 0 — a zero here
+    /// would claim a measured empty track. A gateway predating the field must
+    /// still deserialise.
+    #[test]
+    fn music_receipt_without_a_duration_reports_none() {
+        let r: MusicResponse = serde_json::from_str(
+            r#"{"audio_clips":[],"model":"eleven-music",
+                "cost_ticks":600000000,"balance_after":55,"request_id":"r"}"#,
+        )
+        .expect("deserialise");
+        assert!(r.duration_seconds.is_none(), "a duration was invented");
     }
 }

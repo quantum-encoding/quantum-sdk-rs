@@ -43,6 +43,22 @@ Image receipts: what a generation cost, and what actually made it.
   than a unary one — cost with no cache split — and the SDK reported that faithfully
   by hardcoding both to `None`. Both are read off the event now.
 
+- `VideoResponse.duration_seconds` and `MusicResponse.duration_seconds` — the length
+  the provider actually produced. Settlement prefers it over the requested duration on
+  both routes, so it is the basis of `cost_ticks`: a per-second video and a
+  duration-metered track (Lyria per 30 seconds, ElevenLabs per minute) were both
+  quoting a price whose quantity the payer could not see. `Option<f64>`, absent when
+  the provider reports no length.
+- `VideoResponse.usage` (`MediaTokenUsage`: `prompt_tokens`, `completion_tokens`,
+  `reasoning_tokens`, `cached_tokens`, `total_tokens`) — the token counts behind a
+  TOKEN-billed video charge. Gemini Omni is the only such model, metering output by
+  modality at ~5,792 tokens per second of 720p, so on that path tokens are the whole
+  cost basis; per-second and per-clip models report no usage object at all. Every
+  bucket is `Option<i64>` and never defaults to 0, because absent and zero are
+  different claims — a zeroed object would make a per-second video look like a
+  token-billed one that spent nothing, and would report a 0% cache hit rate for a
+  model that has no cache.
+
 ### Fixed
 - `ChatResponse.cost_ticks` and `.request_id` are `#[serde(default)]` rather than
   `#[serde(skip)]`, and the header injection no longer overwrites a body that already

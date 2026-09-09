@@ -42,6 +42,26 @@ pub struct VideoResponse {
     /// Model that generated the videos.
     pub model: String,
 
+    /// Length of the video actually produced, when the provider reports it.
+    ///
+    /// This is the quantity a per-second model is billed on — settlement
+    /// prefers it over the requested duration — so it is the basis of
+    /// `cost_ticks`, and a receipt without it states a price whose basis the
+    /// payer cannot see. `None` when the provider reports no length; never 0,
+    /// which would claim a measured zero-length video.
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
+
+    /// The token counts behind a TOKEN-billed video charge.
+    ///
+    /// Gemini Omni is the only such model — it meters output by modality at
+    /// ~5,792 tokens per second of 720p — so on that path tokens are the whole
+    /// cost basis. `None` for per-second and per-clip models, whose cost is a
+    /// function of duration instead; the gateway sends no all-zero object,
+    /// because that would assert a token basis the charge does not have.
+    #[serde(default)]
+    pub usage: Option<MediaTokenUsage>,
+
     /// Total cost in ticks.
     #[serde(default)]
     pub cost_ticks: i64,
@@ -53,6 +73,37 @@ pub struct VideoResponse {
     /// Unique request identifier.
     #[serde(default)]
     pub request_id: String,
+}
+
+/// The token breakdown behind a token-billed media charge.
+///
+/// Every bucket is an `Option` because absent and zero are different claims:
+/// absent means the provider does not report that bucket, zero means it
+/// reported none. Defaulting to 0 would make a per-second video look like a
+/// token-billed one that used no tokens, and would report a 0% cache hit rate
+/// for models that have no cache.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaTokenUsage {
+    /// Input tokens billed at the prompt rate.
+    #[serde(default)]
+    pub prompt_tokens: Option<i64>,
+
+    /// Output tokens. For Gemini Omni this is the modality-metered video
+    /// output, which is most of the charge.
+    #[serde(default)]
+    pub completion_tokens: Option<i64>,
+
+    /// Reasoning tokens, billed at the output rate.
+    #[serde(default)]
+    pub reasoning_tokens: Option<i64>,
+
+    /// Input tokens served from cache, billed at the cache-read rate.
+    #[serde(default)]
+    pub cached_tokens: Option<i64>,
+
+    /// Provider-reported total across the buckets.
+    #[serde(default)]
+    pub total_tokens: Option<i64>,
 }
 
 /// A single generated video.
@@ -939,5 +990,71 @@ mod tests {
         let none: AvatarsResponse =
             serde_json::from_str(r#"{"avatars":null,"request_id":"r"}"#).unwrap();
         assert!(none.avatars.is_empty());
+    }
+
+    /// The receipt fields the gateway sends on a token-billed video. Every
+    /// bucket has to arrive, because on a Gemini Omni call they are the whole
+    /// cost basis.
+    #[test]
+    fn video_receipt_carries_duration_and_every_usage_bucket() {
+        let body = r#"{
+            "videos": [{"base64":"AAAA","format":"mp4","size_bytes":184320,"index":0}],
+            "model": "gemini-omni-video",
+            "duration_seconds": 8.5,
+            "usage": {
+                "prompt_tokens": 412,
+                "completion_tokens": 49232,
+                "reasoning_tokens": 96,
+                "cached_tokens": 128,
+                "total_tokens": 49868
+            },
+            "cost_ticks": 1247000000,
+            "balance_after": 73,
+            "request_id": "qai_req_2f1c8ab0-91d"
+        }"#;
+        let r: VideoResponse = serde_json::from_str(body).expect("deserialise");
+        assert_eq!(r.duration_seconds, Some(8.5));
+        let u = r.usage.expect("usage present");
+        assert_eq!(u.prompt_tokens, Some(412));
+        assert_eq!(u.completion_tokens, Some(49_232));
+        assert_eq!(u.reasoning_tokens, Some(96));
+        assert_eq!(u.cached_tokens, Some(128));
+        assert_eq!(u.total_tokens, Some(49_868));
+    }
+
+    /// A per-second model reports no tokens and the gateway sends no usage
+    /// object at all. Absent must stay absent: zeros here would read as a
+    /// token-billed call that spent nothing, and would report a 0% cache hit
+    /// rate on a model that has no cache. A gateway predating these fields
+    /// must still deserialise.
+    #[test]
+    fn video_receipt_without_them_reports_nothing_rather_than_zero() {
+        let body = r#"{
+            "videos": [{"base64":"AAAA","format":"mp4","size_bytes":184320,"index":0}],
+            "model": "veo-2",
+            "cost_ticks": 3200000000,
+            "balance_after": 41,
+            "request_id": "qai_req_7d5e0c14-33a"
+        }"#;
+        let r: VideoResponse = serde_json::from_str(body).expect("deserialise");
+        assert!(r.duration_seconds.is_none(), "a duration was invented");
+        assert!(r.usage.is_none(), "a usage block was invented");
+    }
+
+    /// A partially reported usage keeps the buckets the provider did not send
+    /// distinct from the ones it reported as zero.
+    #[test]
+    fn unreported_buckets_differ_from_reported_zeros() {
+        let r: VideoResponse = serde_json::from_str(
+            r#"{"videos":[],"model":"gemini-omni-video","duration_seconds":4,
+                "usage":{"completion_tokens":23168,"cached_tokens":0},
+                "cost_ticks":1,"balance_after":1,"request_id":"r"}"#,
+        )
+        .expect("deserialise");
+        let u = r.usage.expect("usage present");
+        assert_eq!(u.cached_tokens, Some(0), "a reported zero was dropped");
+        assert!(u.prompt_tokens.is_none(), "an unreported bucket became a zero");
+        assert!(u.reasoning_tokens.is_none(), "an unreported bucket became a zero");
+        assert!(u.total_tokens.is_none(), "an unreported bucket became a zero");
     }
 }
