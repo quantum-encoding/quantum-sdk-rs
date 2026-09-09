@@ -76,6 +76,15 @@ pub struct ImageRequest {
 }
 
 /// Response from image generation.
+/// `#[non_exhaustive]`: this is only ever deserialised from a gateway reply,
+/// never built by a caller, so sealing it costs nothing and makes every future
+/// field a patch release instead of a breaking one.
+///
+/// The request types below are deliberately NOT sealed. `#[non_exhaustive]`
+/// forbids struct-literal construction from another crate — including with
+/// `..Default::default()`, which is the idiom every caller uses — so sealing a
+/// type people build would trade one break now for worse ergonomics forever.
+#[non_exhaustive]
 #[derive(Debug, Clone, Deserialize)]
 pub struct ImageResponse {
     /// Generated images.

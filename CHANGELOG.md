@@ -22,6 +22,14 @@ Image receipts: what a generation cost, and what actually made it.
   Gemini's 1K/2K/4K tier, and with no field for it an edit could not ask for a
   resolution at all.
 
+- `ImageResponse` is `#[non_exhaustive]`. It is only ever deserialised from a gateway
+  reply, never built by a caller, so sealing it costs nothing and makes every future
+  field a patch release rather than a breaking one. The request types are deliberately
+  NOT sealed: `#[non_exhaustive]` forbids struct-literal construction from another
+  crate — including with `..Default::default()`, which is the idiom every caller uses
+  — so sealing a type people build would trade one break now for worse ergonomics
+  forever. Verified against a real downstream crate rather than assumed.
+
 ### Breaking
 - Both structs gain public fields. Anything constructing them with an exhaustive
   struct literal must add `..Default::default()`. Every new field is `Option` and
