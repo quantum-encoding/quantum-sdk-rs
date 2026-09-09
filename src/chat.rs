@@ -448,6 +448,25 @@ pub struct ChatUsage {
     #[serde(default)]
     pub cache_write_tokens: Option<i64>,
 
+    /// The AUDIO share of `input_tokens`. Several Gemini models charge a
+    /// premium for audio input — 3.3x the text rate on gemini-2.5-flash, 2x
+    /// on gemini-3.1-flash-lite — so a turn carrying audio costs more than
+    /// its token counts appear to justify.
+    ///
+    /// This OVERLAPS `input_tokens` and is never added to it: reconciling a
+    /// bill applies the audio rate to these and the text rate to the
+    /// remainder. Omitted when the turn carried no audio, which is nearly
+    /// all of them, and by models that charge no audio premium — gpt-5.x and
+    /// Claude price audio at the text rate and report nothing here.
+    #[serde(default)]
+    pub audio_tokens: Option<i64>,
+
+    /// The audio share of `cached_tokens`, billed at the model's cached
+    /// AUDIO rate rather than its cached text rate. Overlaps
+    /// `cached_tokens` the same way `audio_tokens` overlaps `input_tokens`.
+    #[serde(default)]
+    pub cached_audio_tokens: Option<i64>,
+
     /// Reasoning / thinking tokens, billed at the output rate. Omitted on
     /// responses from non-reasoning models. Already inside
     /// `output_tokens` on the non-streaming envelope; on top of it on the
@@ -637,6 +656,12 @@ struct RawStreamEvent {
     /// events, absent when the turn wrote nothing to the cache.
     #[serde(default)]
     cache_write_tokens: Option<i64>,
+    /// The audio share of the input, and of the cached input. Carried by
+    /// `usage` events, absent when the turn carried no audio.
+    #[serde(default)]
+    audio_tokens: Option<i64>,
+    #[serde(default)]
+    cached_audio_tokens: Option<i64>,
     #[serde(default)]
     message: Option<String>,
     /// Carried by the `citations` event.
@@ -901,6 +926,8 @@ where
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
                         cached_tokens: raw.cached_tokens,
                         cache_write_tokens: raw.cache_write_tokens,
+                        audio_tokens: raw.audio_tokens,
+                        cached_audio_tokens: raw.cached_audio_tokens,
                         reasoning_tokens: raw.reasoning_tokens,
                     });
                 }
@@ -1093,6 +1120,46 @@ mod usage_ledger_tests {
         assert_eq!(billed_input, 1950);
     }
 
+    /// Audio input is priced above text on several Gemini models — 3.3x on
+    /// gemini-2.5-flash — so a turn carrying audio costs more than its token
+    /// counts appear to justify. The share is reported so a caller can
+    /// reconcile the charge.
+    ///
+    /// It OVERLAPS input_tokens and must never be added to it: the audio
+    /// rate applies to these tokens and the text rate to the remainder.
+    /// Summing them is the obvious way to get this wrong.
+    #[test]
+    fn audio_is_a_share_of_the_input_not_an_addition() {
+        let u: ChatUsage = serde_json::from_str(
+            r#"{"input_tokens":100000,"output_tokens":250,"cost_ticks":4200,
+                "cached_tokens":20000,"audio_tokens":40000,"cached_audio_tokens":5000}"#,
+        )
+        .expect("decode");
+
+        assert_eq!(u.audio_tokens, Some(40000));
+        assert_eq!(u.cached_audio_tokens, Some(5000));
+
+        // A share, never larger than the bucket it belongs to.
+        assert!(u.audio_tokens.unwrap() <= u.input_tokens);
+        assert!(u.cached_audio_tokens.unwrap() <= u.cached_tokens.unwrap());
+
+        // The text remainder is what the base rate applies to.
+        let text_input = u.input_tokens - u.audio_tokens.unwrap_or(0);
+        assert_eq!(text_input, 60000);
+    }
+
+    /// A turn with no audio, or a model that prices audio at its text rate,
+    /// reports nothing — the field stays None rather than becoming a zero
+    /// that looks measured.
+    #[test]
+    fn a_turn_without_audio_reports_none() {
+        let u: ChatUsage =
+            serde_json::from_str(r#"{"input_tokens":10,"output_tokens":2,"cost_ticks":7}"#)
+                .expect("decode");
+        assert!(u.audio_tokens.is_none());
+        assert!(u.cached_audio_tokens.is_none());
+    }
+
     /// A provider that charges no write premium reports no bucket, and the
     /// field stays None rather than becoming a zero that looks measured.
     #[test]
@@ -1150,6 +1217,24 @@ mod stream_usage_bucket_tests {
         .expect("usage event parses");
         assert_eq!(raw.cached_tokens, Some(300));
         assert_eq!(raw.cache_write_tokens, Some(500));
+    }
+
+    // And the same audio split, for the same reason: a streaming caller on a
+    // model that prices audio above text would otherwise see a cost it could
+    // not account for. The share reaches ChatUsage, not just the raw event.
+    #[test]
+    fn a_streaming_usage_event_carries_the_audio_share() {
+        let raw: RawStreamEvent = serde_json::from_str(
+            r#"{"type":"usage","input_tokens":100000,"output_tokens":40,
+                "cached_tokens":20000,"audio_tokens":40000,
+                "cached_audio_tokens":5000,"cost_ticks":12345}"#,
+        )
+        .expect("usage event parses");
+        assert_eq!(raw.audio_tokens, Some(40000));
+        assert_eq!(raw.cached_audio_tokens, Some(5000));
+        // A share of the input it belongs to, never an addition to it.
+        assert!(raw.audio_tokens.unwrap() <= raw.input_tokens.unwrap());
+        assert!(raw.cached_audio_tokens.unwrap() <= raw.cached_tokens.unwrap());
     }
 
     // A gateway that reports no cache activity leaves the fields off the

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.10.1
+
+Audio is billed above text, and the response now says how much of it there was.
+
+### Added
+- `ChatUsage.audio_tokens` and `ChatUsage.cached_audio_tokens` — the AUDIO share
+  of `input_tokens` and `cached_tokens`, on both the non-streaming envelope and
+  the SSE `usage` event. Several Gemini models price audio input above text —
+  3.3x on gemini-2.5-flash, 2x on gemini-3.1-flash-lite — so a turn carrying
+  audio costs more than its token counts appear to justify, and until now a
+  caller could see the charge and had nothing on the wire to explain it. This is
+  the same argument that added `cache_write_tokens` in 0.10.0.
+
+  Like the cache buckets, these OVERLAP the counts they belong to and are never
+  added to them: reconciling a bill applies the audio rate to these tokens and
+  the text rate to the remainder. Summing them double-counts.
+
+  Absent when the turn carried no audio, and absent on models that price audio
+  at their text rate — gpt-5.x, Claude, and even gemini-2.5-pro and
+  gemini-3.5-flash, which charge no premium at all. `None` means "no audio
+  premium applies", not "zero audio".
+
+  Against an older gateway the fields are simply absent, so this is a patch
+  release.
+
 ## 0.10.0
 
 Image receipts: what a generation cost, and what actually made it.
