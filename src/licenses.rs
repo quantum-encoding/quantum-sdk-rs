@@ -182,7 +182,7 @@ mod tests {
     fn revoked_license_carries_no_key() {
         let resp: LicensesResponse = serde_json::from_str(
             r#"{"licenses":[
-                {"id":"lic_1","app":"kitchenshare","sku":"pro","source":"stripe",
+                {"id":"lic_1","app":"demo-app","sku":"pro","source":"stripe",
                  "source_transaction":"pi_1","issued_at":"2026-01-01T00:00:00Z",
                  "expires_at":"2027-01-01T00:00:00Z","status":"revoked"}]}"#,
         )

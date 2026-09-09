@@ -386,7 +386,7 @@ async fn deploy_model_confirms_when_provisioning() {
 #[tokio::test]
 async fn licenses_mine_filters_by_app() {
     let gw = mock_gateway(
-        r#"{"licenses":[{"id":"lic_1","app":"kitchenshare","sku":"pro","source":"stripe",
+        r#"{"licenses":[{"id":"lic_1","app":"demo-app","sku":"pro","source":"stripe",
                          "source_transaction":"pi_1","issued_at":"2026-01-01T00:00:00Z",
                          "expires_at":"2027-01-01T00:00:00Z","status":"active",
                          "license_key":"ey.jwt"}]}"#,
@@ -395,12 +395,13 @@ async fn licenses_mine_filters_by_app() {
 
     let resp = gw
         .client()
-        .licenses_mine(Some("kitchen share"))
+        .licenses_mine(Some("demo app"))
         .await
         .expect("list succeeds");
 
     let req = gw.only_request();
-    assert_eq!(req.path, "/qai/v1/licenses/mine?app=kitchen%20share");
+    // The space is the point: it must reach the wire percent-encoded.
+    assert_eq!(req.path, "/qai/v1/licenses/mine?app=demo%20app");
     assert_eq!(resp.licenses[0].license_key, "ey.jwt");
 }
 
