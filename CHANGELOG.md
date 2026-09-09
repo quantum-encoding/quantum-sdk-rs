@@ -30,8 +30,27 @@ Image receipts: what a generation cost, and what actually made it.
   — so sealing a type people build would trade one break now for worse ergonomics
   forever. Verified against a real downstream crate rather than assumed.
 
+- `ChatUsage.cache_write_tokens` — input tokens that triggered a cache WRITE, billed
+  at a premium over standard input (Anthropic 1.25x base for the 5-minute TTL, GPT
+  Image 2.5 $12.50/M against $8.00). Without it the four billed buckets cannot be
+  reconstructed from a response: a client could see what a call cost and not which
+  part of it was the cache being filled.
+
+### Fixed
+- `ChatResponse.cost_ticks` and `.request_id` are `#[serde(default)]` rather than
+  `#[serde(skip)]`, and the header injection no longer overwrites a body that already
+  carried them. `skip` meant the fields were never read from JSON at all, so a
+  response rebuilt from a stored body — a disk cache, a replayed fixture, a proxy that
+  moves the header into the envelope — reported a cost of zero for a call that cost
+  something. The header still fills them in on a live call, where the body carries
+  neither.
+
 ### Breaking
-- Both structs gain public fields. Anything constructing them with an exhaustive
+- `ChatUsage.input_tokens` and `.output_tokens` are `i64`, were `i32`. They sat beside
+  `cached_tokens`, `reasoning_tokens` and `cost_ticks`, all already `i64`, so summing
+  across the buckets — most of what a caller does with them — needed a cast on two
+  fields of five and not the rest.
+- Both image structs gain public fields. Anything constructing them with an exhaustive
   struct literal must add `..Default::default()`. Every new field is `Option` and
   skipped when `None`, so the serialised request and response are unchanged for code
   that sets none of them, and an older gateway still deserialises.

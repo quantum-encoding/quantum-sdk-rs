@@ -291,12 +291,20 @@ pub struct ChatResponse {
     #[serde(default)]
     pub cached: Option<bool>,
 
-    /// Total cost from the X-QAI-Cost-Ticks header.
-    #[serde(skip)]
+    /// Total cost, from the X-QAI-Cost-Ticks header on a live call.
+    ///
+    /// `default` rather than `skip`: skip meant the field was never read from
+    /// JSON at all, so a response reconstructed from a stored body — a disk
+    /// cache, a replayed fixture, a proxy that moves the header into the
+    /// envelope — came back reporting a cost of zero for a call that cost
+    /// something. Read it when the body has it, fill it from the header when
+    /// it does not.
+    #[serde(default)]
     pub cost_ticks: i64,
 
-    /// From the X-QAI-Request-Id header.
-    #[serde(skip)]
+    /// From the X-QAI-Request-Id header, or the body when it carries one.
+    /// See [`cost_ticks`](Self::cost_ticks) for why this is `default`.
+    #[serde(default)]
     pub request_id: String,
 }
 
@@ -411,10 +419,14 @@ pub struct Citation {
 /// `output_tokens + reasoning_tokens`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatUsage {
-    pub input_tokens: i32,
+    /// i64 to match every other count and the cost beside them. They were i32
+    /// while cached_tokens, reasoning_tokens and cost_ticks were i64, so any
+    /// arithmetic across the buckets — which is most of what a caller does
+    /// with these — needed a cast on two of the five fields and not the rest.
+    pub input_tokens: i64,
     /// Output tokens billed at the output rate. Includes reasoning on the
     /// non-streaming envelope; excludes it on the streaming usage event.
-    pub output_tokens: i32,
+    pub output_tokens: i64,
     /// What the call cost, covering input, output and reasoning.
     pub cost_ticks: i64,
 
@@ -423,6 +435,17 @@ pub struct ChatUsage {
     /// the streaming usage event.
     #[serde(default)]
     pub cached_tokens: Option<i64>,
+
+    /// Input tokens that triggered a cache WRITE, billed at a premium over
+    /// standard input — Anthropic charges 1.25x base for the 5-minute TTL,
+    /// GPT Image 2.5 $12.50/M against $8.00 input.
+    ///
+    /// Without it the four billed buckets cannot be reconstructed from a
+    /// response: prompt, cache reads, cache writes and output. A client could
+    /// see what a call cost and not which part of it was the cache being
+    /// filled. Omitted by providers that charge no write premium.
+    #[serde(default)]
+    pub cache_write_tokens: Option<i64>,
 
     /// Reasoning / thinking tokens, billed at the output rate. Omitted on
     /// responses from non-reasoning models. Already inside
@@ -596,9 +619,9 @@ struct RawStreamEvent {
     #[serde(default)]
     partial_json: Option<String>,
     #[serde(default)]
-    input_tokens: Option<i32>,
+    input_tokens: Option<i64>,
     #[serde(default)]
-    output_tokens: Option<i32>,
+    output_tokens: Option<i64>,
     /// Portion of `output_tokens` spent on reasoning; carried by `usage`
     /// events, absent on non-reasoning models.
     #[serde(default)]
@@ -673,8 +696,16 @@ impl Client {
         let (mut resp, meta) = self
             .post_json::<ChatRequest, ChatResponse>("/qai/v1/chat", &req)
             .await?;
-        resp.cost_ticks = meta.cost_ticks;
-        resp.request_id = meta.request_id;
+        // The header fills these in; it does not overwrite a body that
+        // already carried them. Assigning unconditionally would zero a
+        // reconstructed response whenever the header is absent, which is the
+        // failure `default` above exists to prevent.
+        if resp.cost_ticks == 0 {
+            resp.cost_ticks = meta.cost_ticks;
+        }
+        if resp.request_id.is_empty() {
+            resp.request_id = meta.request_id;
+        }
         if resp.model.is_empty() {
             resp.model = meta.model;
         }
@@ -860,9 +891,10 @@ where
                         output_tokens: raw.output_tokens.unwrap_or(0),
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
                         // The streaming usage event carries reasoning_tokens
-                        // but not cached_tokens; the cache split arrives only
-                        // on the non-streaming envelope.
+                        // but neither cache bucket; the cache split arrives
+                        // only on the non-streaming envelope.
                         cached_tokens: None,
+                        cache_write_tokens: None,
                         reasoning_tokens: raw.reasoning_tokens,
                     });
                 }
@@ -1025,5 +1057,71 @@ mod tests {
             bad.is_err(),
             "a malformed block array must not decode as None"
         );
+    }
+}
+
+#[cfg(test)]
+mod usage_ledger_tests {
+    use super::*;
+
+    /// The four billed buckets have to be reconstructable from one response:
+    /// prompt, cache reads, cache writes, output. Without cache_write_tokens a
+    /// caller could see what a call cost and not which part of it was the
+    /// cache being filled — on Anthropic that part bills at 1.25x input.
+    #[test]
+    fn usage_carries_all_four_billed_buckets() {
+        let u: ChatUsage = serde_json::from_str(
+            r#"{"input_tokens":1000,"output_tokens":250,"cost_ticks":4200,
+                "cached_tokens":800,"cache_write_tokens":150,"reasoning_tokens":90}"#,
+        )
+        .expect("decode");
+
+        assert_eq!(u.input_tokens, 1000);
+        assert_eq!(u.output_tokens, 250);
+        assert_eq!(u.cached_tokens, Some(800));
+        assert_eq!(u.cache_write_tokens, Some(150));
+        assert_eq!(u.reasoning_tokens, Some(90));
+
+        // Every count is i64, so summing across the buckets needs no cast.
+        let billed_input = u.input_tokens + u.cached_tokens.unwrap_or(0) + u.cache_write_tokens.unwrap_or(0);
+        assert_eq!(billed_input, 1950);
+    }
+
+    /// A provider that charges no write premium reports no bucket, and the
+    /// field stays None rather than becoming a zero that looks measured.
+    #[test]
+    fn a_provider_without_a_write_premium_reports_none() {
+        let u: ChatUsage =
+            serde_json::from_str(r#"{"input_tokens":10,"output_tokens":2,"cost_ticks":7}"#)
+                .expect("decode");
+        assert!(u.cache_write_tokens.is_none());
+        assert!(u.cached_tokens.is_none());
+    }
+
+    /// cost_ticks and request_id arrive in headers on a live call, and the
+    /// fields were `skip` — never read from JSON at all. A response rebuilt
+    /// from a stored body then reported a cost of zero for a call that cost
+    /// something. `default` reads them when the body has them.
+    #[test]
+    fn a_response_rebuilt_from_a_stored_body_keeps_its_cost() {
+        let r: ChatResponse = serde_json::from_str(
+            r#"{"id":"msg_1","model":"claude-opus-5","content":[],
+                "cost_ticks":123456,"request_id":"qai_req_stored"}"#,
+        )
+        .expect("decode");
+
+        assert_eq!(r.cost_ticks, 123_456, "a stored cost was discarded");
+        assert_eq!(r.request_id, "qai_req_stored", "a stored request id was discarded");
+    }
+
+    /// A live reply carries neither in the body; they default and the header
+    /// injection fills them in.
+    #[test]
+    fn a_live_reply_without_them_defaults_rather_than_failing() {
+        let r: ChatResponse =
+            serde_json::from_str(r#"{"id":"msg_1","model":"claude-opus-5","content":[]}"#)
+                .expect("decode");
+        assert_eq!(r.cost_ticks, 0);
+        assert!(r.request_id.is_empty());
     }
 }
