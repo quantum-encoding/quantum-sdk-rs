@@ -164,6 +164,37 @@ pub struct ImageEditRequest {
     /// Output dimensions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<String>,
+
+    /// Aspect ratio, e.g. "1:1" or "16:9" (Gemini).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<String>,
+
+    /// Resolution tier: "1K", "2K", "4K" (Gemini Pro / Nano Banana 2).
+    ///
+    /// Distinct from `size`, which is OpenAI's pixel enum. The two name
+    /// different things and both reach the gateway.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_size: Option<String>,
+
+    /// Render effort: "auto", "low", "medium", "high" (OpenAI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+
+    /// Output container: "png", "jpeg", "webp".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+
+    /// Background mode: "auto", "transparent", "opaque" (OpenAI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+
+    /// "high" preserves faces across an edit (OpenAI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_fidelity: Option<String>,
+
+    /// Search grounding (Gemini Pro).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<bool>,
 }
 
 /// Response from image editing (same shape as generation).
