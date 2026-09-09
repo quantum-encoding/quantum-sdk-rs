@@ -1,6 +1,34 @@
 # Changelog
 
-## 0.9.0 — unreleased
+## 0.10.0
+
+Image receipts: what a generation cost, and what actually made it.
+
+### Added
+- `ImageResponse.revised_prompt` — the prompt the provider generated from, when it
+  rewrote the one it was given. Every provider adapter behind the gateway has always
+  captured it and the response dropped it at the wire. On a model that rewrites, this
+  is the text the picture was made from, so without it a caller cannot reproduce its
+  own image or explain why the output drifted.
+- `ImageResponse.usage` (`ImageUsage`: `prompt_tokens`, `completion_tokens`,
+  `total_tokens`) — the quantities the charge was computed from. Flat-priced models
+  report none and the field is absent, which is correct: their rate is per image and
+  checkable without it. For a token-priced model it is the whole audit — two real
+  gpt-image-2 generations on one day came back at $0.0527 and $0.01628, a 3x spread
+  with nothing else on the wire to explain it.
+- `ImageEditRequest` reaches the rest of the surface the gateway's edit route has long
+  accepted: `aspect_ratio`, `image_size`, `quality`, `output_format`, `background`,
+  `input_fidelity`, `grounding`. `size` is OpenAI's pixel enum; `image_size` is
+  Gemini's 1K/2K/4K tier, and with no field for it an edit could not ask for a
+  resolution at all.
+
+### Breaking
+- Both structs gain public fields. Anything constructing them with an exhaustive
+  struct literal must add `..Default::default()`. Every new field is `Option` and
+  skipped when `None`, so the serialised request and response are unchanged for code
+  that sets none of them, and an older gateway still deserialises.
+
+## 0.9.0 — released 2026-09-05
 
 Parity with the gateway as of September 2026.
 
