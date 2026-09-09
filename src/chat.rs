@@ -431,8 +431,7 @@ pub struct ChatUsage {
     pub cost_ticks: i64,
 
     /// Input tokens served from the provider's prompt cache, billed at the
-    /// lower cached rate. Omitted on responses with no cache hit and on
-    /// the streaming usage event.
+    /// lower cached rate. Omitted when the turn had no cache hit.
     #[serde(default)]
     pub cached_tokens: Option<i64>,
 
@@ -440,10 +439,12 @@ pub struct ChatUsage {
     /// standard input — Anthropic charges 1.25x base for the 5-minute TTL,
     /// GPT Image 2.5 $12.50/M against $8.00 input.
     ///
-    /// Without it the four billed buckets cannot be reconstructed from a
-    /// response: prompt, cache reads, cache writes and output. A client could
-    /// see what a call cost and not which part of it was the cache being
-    /// filled. Omitted by providers that charge no write premium.
+    /// These OVERLAP `input_tokens`, so reconciling a bill adds the premium
+    /// on the write rate, never the tokens twice. Without the field the four
+    /// billed buckets cannot be reconstructed from a response: prompt, cache
+    /// reads, cache writes and output. A client could see what a call cost
+    /// and not which part of it was the cache being filled. Omitted by
+    /// providers that charge no write premium.
     #[serde(default)]
     pub cache_write_tokens: Option<i64>,
 
@@ -628,6 +629,14 @@ struct RawStreamEvent {
     reasoning_tokens: Option<i64>,
     #[serde(default)]
     cost_ticks: Option<i64>,
+    /// Input tokens served from the provider's prompt cache. Carried by
+    /// `usage` events, absent when the turn had no cache hit.
+    #[serde(default)]
+    cached_tokens: Option<i64>,
+    /// Input tokens that triggered a cache write. Carried by `usage`
+    /// events, absent when the turn wrote nothing to the cache.
+    #[serde(default)]
+    cache_write_tokens: Option<i64>,
     #[serde(default)]
     message: Option<String>,
     /// Carried by the `citations` event.
@@ -890,11 +899,8 @@ where
                         input_tokens: raw.input_tokens.unwrap_or(0),
                         output_tokens: raw.output_tokens.unwrap_or(0),
                         cost_ticks: raw.cost_ticks.unwrap_or(0),
-                        // The streaming usage event carries reasoning_tokens
-                        // but neither cache bucket; the cache split arrives
-                        // only on the non-streaming envelope.
-                        cached_tokens: None,
-                        cache_write_tokens: None,
+                        cached_tokens: raw.cached_tokens,
+                        cache_write_tokens: raw.cache_write_tokens,
                         reasoning_tokens: raw.reasoning_tokens,
                     });
                 }
@@ -1123,5 +1129,54 @@ mod usage_ledger_tests {
                 .expect("decode");
         assert_eq!(r.cost_ticks, 0);
         assert!(r.request_id.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod stream_usage_bucket_tests {
+    use super::*;
+
+    // The streaming usage event carries the same cache split as the
+    // non-streaming envelope. It used to carry neither bucket, so a
+    // streaming caller could see cost_ticks and never learn which part of
+    // it was the cache.
+    #[test]
+    fn a_streaming_usage_event_carries_both_cache_buckets() {
+        let raw: RawStreamEvent = serde_json::from_str(
+            r#"{"type":"usage","input_tokens":900,"output_tokens":40,
+                "reasoning_tokens":60,"cached_tokens":300,
+                "cache_write_tokens":500,"cost_ticks":12345}"#,
+        )
+        .expect("usage event parses");
+        assert_eq!(raw.cached_tokens, Some(300));
+        assert_eq!(raw.cache_write_tokens, Some(500));
+    }
+
+    // A gateway that reports no cache activity leaves the fields off the
+    // wire entirely; absent must stay None rather than reading as zero.
+    #[test]
+    fn absent_cache_buckets_stay_none_not_zero() {
+        let raw: RawStreamEvent = serde_json::from_str(
+            r#"{"type":"usage","input_tokens":10,"output_tokens":5,"cost_ticks":1}"#,
+        )
+        .expect("usage event parses");
+        assert_eq!(raw.cached_tokens, None);
+        assert_eq!(raw.cache_write_tokens, None);
+    }
+
+    // The non-streaming envelope's four billed buckets survive a round
+    // trip, and output_tokens there is the billable total.
+    #[test]
+    fn the_envelope_carries_all_four_billed_buckets() {
+        let u: ChatUsage = serde_json::from_str(
+            r#"{"input_tokens":1000,"cached_tokens":400,"cache_write_tokens":600,
+                "output_tokens":75,"reasoning_tokens":25,"cost_ticks":999}"#,
+        )
+        .expect("usage parses");
+        assert_eq!(u.input_tokens, 1000);
+        assert_eq!(u.cached_tokens, Some(400));
+        assert_eq!(u.cache_write_tokens, Some(600));
+        assert_eq!(u.output_tokens, 75);
+        assert_eq!(u.reasoning_tokens, Some(25));
     }
 }

@@ -34,7 +34,14 @@ Image receipts: what a generation cost, and what actually made it.
   at a premium over standard input (Anthropic 1.25x base for the 5-minute TTL, GPT
   Image 2.5 $12.50/M against $8.00). Without it the four billed buckets cannot be
   reconstructed from a response: a client could see what a call cost and not which
-  part of it was the cache being filled.
+  part of it was the cache being filled. The gateway emits it on both the
+  non-streaming envelope and the SSE `usage` event as of the same release; against an
+  older gateway the field is simply absent.
+
+- The streaming `usage` event now yields `cached_tokens` and `cache_write_tokens`
+  alongside `reasoning_tokens`. A streaming caller was previously told strictly less
+  than a unary one — cost with no cache split — and the SDK reported that faithfully
+  by hardcoding both to `None`. Both are read off the event now.
 
 ### Fixed
 - `ChatResponse.cost_ticks` and `.request_id` are `#[serde(default)]` rather than
