@@ -93,6 +93,80 @@ async fn main() -> quantum_sdk::Result<()> {
 }
 ```
 
+### Reasoning state across a tool loop
+
+Reasoning models on the OpenAI and xAI lanes mint a `reasoning` content block
+alongside their `tool_use` blocks. It is the provider's own state, opaque, and
+it must go back **unchanged and in the same position** on the next turn's
+assistant message — its place among the tool calls is how the provider learns
+where the reasoning sat. Drop it and the reasoning tokens are re-billed on
+every round of the loop.
+
+The simplest correct thing is to echo the whole `content` array back:
+
+```rust,no_run
+use quantum_sdk::{ChatMessage, ChatRequest, Client};
+
+#[tokio::main]
+async fn main() -> quantum_sdk::Result<()> {
+    let client = Client::new("qai_k_your_key_here")?;
+    let mut messages = vec![ChatMessage::user("What is the weather in Oslo?")];
+
+    let response = client.chat(&ChatRequest {
+        model: "gpt-5.6".into(),
+        messages: messages.clone(),
+        // One key per conversation, reused on every turn, so all of them land
+        // on the same warm provider cache shard.
+        prompt_cache_key: Some("conv-7f3a".into()),
+        ..Default::default()
+    }).await?;
+
+    // Verbatim, in order: reasoning blocks, tool_use blocks, text blocks.
+    messages.push(ChatMessage {
+        role: "assistant".into(),
+        content_blocks: Some(response.content.clone()),
+        ..Default::default()
+    });
+    // ... then push one tool-result message per tool_use block and loop.
+    Ok(())
+}
+```
+
+A `thinking` block is the human-readable summary of the same turn; `reasoning`
+is for the wire. Render the first, replay the second.
+
+On Gemini 3 the equivalent state is `ContentBlock::thought_signature`, and it
+now rides the **text** block of a turn that ended in text as well as the
+`tool_use` blocks. Streaming sends it as a `thought_signature` event just
+before `done`.
+
+### Provider options
+
+`provider_options` is an open map keyed by provider, so a key the gateway
+documents but this SDK version does not name still rides through:
+
+```rust,no_run
+use std::collections::HashMap;
+use quantum_sdk::ChatRequest;
+
+let req = ChatRequest {
+    model: "gpt-5.6".into(),
+    provider_options: Some(HashMap::from([(
+        "openai".to_string(),
+        serde_json::json!({
+            "reasoning_summary": "detailed",  // auto | concise | detailed | none
+            "reasoning_mode": "pro",          // standard | pro
+            "verbosity": "low",               // low | medium | high
+            "text_format": "json_object",     // text | json_object
+        }),
+    )])),
+    ..Default::default()
+};
+```
+
+`provider_options.xai.native_files` (bool) sends files to xAI natively instead
+of extracting them gateway-side.
+
 ### Streaming
 
 `ChatStream` yields `StreamEvent`s, not `Result`s: a failure after the

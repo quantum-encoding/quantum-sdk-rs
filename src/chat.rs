@@ -66,6 +66,19 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
 
+    /// Pins every turn of one conversation to the same provider prompt-cache
+    /// shard. Any stable string the client keeps per conversation — the
+    /// gateway hashes it with the caller's identity before forwarding it as
+    /// OpenAI/xAI `prompt_cache_key` (or `x-grok-conv-id` on the xAI
+    /// chat-completions lane). `None` = derived from the caller's identity
+    /// alone, so all of one user's conversations share a shard. Generate one
+    /// per conversation object and reuse it on every turn.
+    ///
+    /// Honored by `/qai/v1/chat` only: the session endpoint derives its key
+    /// from the session ID and ignores a client-supplied one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<String>,
+
     /// Vertex resource name of a previously created context cache (e.g.
     /// "cachedContents/abc123"). When set, the cached content is billed at
     /// the cached-read rate and need not be re-sent. Gemini-only; the
@@ -73,7 +86,20 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_content: Option<String>,
 
-    /// Provider-specific settings (e.g. Anthropic thinking, xAI search).
+    /// Provider-specific settings, keyed by provider: an open map, so a key
+    /// the gateway documents but this SDK version does not name still rides
+    /// through as raw JSON.
+    ///
+    /// Documented keys:
+    /// - `provider_options.openai.reasoning_summary`: `auto` | `concise` |
+    ///   `detailed` | `none`
+    /// - `provider_options.openai.reasoning_mode`: `standard` | `pro`
+    /// - `provider_options.openai.verbosity`: `low` | `medium` | `high`
+    /// - `provider_options.openai.text_format`: `text` | `json_object`
+    /// - `provider_options.xai.native_files`: bool — send files to xAI
+    ///   natively instead of extracting them gateway-side
+    /// - `provider_options.anthropic.*` — thinking budget and friends
+    ///
     /// The routing-region override (`provider_options.region`) rides here
     /// too — prefer the typed [`ChatRequest::region`] for it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,7 +208,8 @@ impl ChatMessage {
 /// A single block in the response content array.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContentBlock {
-    /// One of "text", "thinking", or "tool_use".
+    /// One of "text", "thinking", "reasoning", "tool_use", "image", "file"
+    /// or "file_uri".
     #[serde(rename = "type")]
     pub block_type: String,
 
@@ -202,9 +229,33 @@ pub struct ContentBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<HashMap<String, serde_json::Value>>,
 
-    /// Gemini thought signature — must be echoed back with tool results.
+    /// Gemini thought signature (base64). Present on `tool_use` blocks and,
+    /// on Gemini 3, on the `text` block of a turn that ended in text — echo
+    /// it back on the corresponding block of the next turn's assistant
+    /// message. A streaming turn that ends in text carries it on the
+    /// `thought_signature` event instead, see
+    /// [`StreamEvent::thought_signature`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought_signature: Option<String>,
+
+    /// The provider's own reasoning item, verbatim, on a block of type
+    /// `reasoning`. Opaque: never inspect or rebuild it — pass the whole
+    /// block back untouched, **in the position it arrived in**, on the next
+    /// turn's assistant message. Its place among the `tool_use` blocks is
+    /// how the provider learns where the reasoning sat; replaying it behind
+    /// the call it reasoned about is a different conversation and the
+    /// provider rejects it. Dropping it re-bills the reasoning tokens on
+    /// every round of a tool loop.
+    ///
+    /// Distinct from a `thinking` block, which is the human-readable
+    /// summary: one is for the reader, one is for the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<serde_json::Value>,
+
+    /// Model that minted a `reasoning` block. Reasoning state is bound to
+    /// its model, so a block is never replayed to a different one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minted_by: Option<String>,
 
     /// Base64-encoded data for file/image content blocks.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -509,8 +560,9 @@ pub struct EstimateResponse {
 pub struct StreamEvent {
     /// Event type: "content_delta", "thinking_delta",
     /// "tool_use_start", "tool_use_input_delta", "tool_use_complete",
-    /// "tool_use" (atomic), "citations", "session", "usage", "heartbeat",
-    /// "error", "invalid_request", "rate_limit", "done".
+    /// "tool_use" (atomic), "citations", "session", "usage",
+    /// "thought_signature", "heartbeat", "error", "invalid_request",
+    /// "rate_limit", "done".
     pub event_type: String,
 
     /// Incremental text for content_delta and thinking_delta events.
@@ -540,6 +592,14 @@ pub struct StreamEvent {
     /// [`chat_session_stream`](Client::chat_session_stream).
     pub session: Option<StreamSession>,
 
+    /// Gemini 3's signature for a stream that ended in text (base64), on the
+    /// `thought_signature` event the gateway sends just before `done`. Store
+    /// it on the assistant text block echoed back next turn — the same field
+    /// [`ContentBlock::thought_signature`] carries on a non-streaming
+    /// response. Absent on every other event and on providers that issue no
+    /// signature.
+    pub thought_signature: Option<String>,
+
     /// The failure message, on `error`, `invalid_request` and `rate_limit`
     /// events, and on an `error` the SDK raises for a payload it could
     /// not parse.
@@ -561,6 +621,7 @@ impl StreamEvent {
             usage: None,
             citations: Vec::new(),
             session: None,
+            thought_signature: None,
             error: None,
             done: false,
         }
@@ -667,6 +728,10 @@ struct RawStreamEvent {
     /// Carried by the `citations` event.
     #[serde(default)]
     citations: Option<Vec<Citation>>,
+    /// Carried by the `thought_signature` event (and, for back-compat, by
+    /// `tool_use` events) — base64 Gemini 3 signature.
+    #[serde(default)]
+    thought_signature: Option<String>,
     /// Carried by the `session` event that opens a session stream.
     #[serde(default)]
     session_id: Option<String>,
@@ -894,6 +959,9 @@ where
                 }
                 "tool_use" => {
                     // Atomic form, from backends that do not stream the triplet.
+                    // Gemini rides its signature on this event; the client
+                    // echoes it on the tool_use block of the next turn.
+                    ev.thought_signature = raw.thought_signature.clone();
                     ev.tool_use = Some(StreamToolUse {
                         id: raw.id.unwrap_or_default(),
                         name: raw.name.unwrap_or_default(),
@@ -944,6 +1012,9 @@ where
                         session_id: raw.session_id.unwrap_or_default(),
                         compacted: raw.compacted.unwrap_or(false),
                     });
+                }
+                "thought_signature" => {
+                    ev.thought_signature = raw.thought_signature;
                 }
                 "heartbeat" => {}
                 _ => {}
@@ -1263,5 +1334,166 @@ mod stream_usage_bucket_tests {
         assert_eq!(u.cache_write_tokens, Some(600));
         assert_eq!(u.output_tokens, 75);
         assert_eq!(u.reasoning_tokens, Some(25));
+    }
+}
+
+#[cfg(test)]
+mod wire_contract_tests {
+    use super::*;
+
+    /// `prompt_cache_key` rides the request only when set, so a caller who
+    /// never names one keeps the gateway's identity-derived default.
+    #[test]
+    fn prompt_cache_key_serializes_only_when_set() {
+        let mut req = ChatRequest {
+            model: "gpt-5.6".into(),
+            messages: vec![ChatMessage::user("hi")],
+            ..Default::default()
+        };
+        let bare: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert!(bare.get("prompt_cache_key").is_none());
+
+        req.prompt_cache_key = Some("conv-7f3a".into());
+        let keyed: serde_json::Value = serde_json::to_value(&req).unwrap();
+        assert_eq!(keyed["prompt_cache_key"], "conv-7f3a");
+    }
+
+    /// A `reasoning` block round-trips byte-for-byte and keeps its place
+    /// among the tool calls — position is the state the provider reads.
+    #[test]
+    fn reasoning_block_round_trips_verbatim() {
+        let wire = r#"{
+            "id": "req_1",
+            "model": "gpt-5.6",
+            "content": [
+                {"type": "reasoning",
+                 "reasoning": {"id": "rs_abc", "summary": [], "encrypted_content": "Zm9v"},
+                 "minted_by": "gpt-5.6"},
+                {"type": "tool_use", "id": "call_1", "name": "lookup", "input": {"q": "x"}}
+            ],
+            "stop_reason": "tool_use"
+        }"#;
+        let resp: ChatResponse = serde_json::from_str(wire).unwrap();
+        assert_eq!(resp.content.len(), 2);
+
+        let reasoning = &resp.content[0];
+        assert_eq!(reasoning.block_type, "reasoning");
+        assert_eq!(reasoning.minted_by.as_deref(), Some("gpt-5.6"));
+        assert_eq!(
+            reasoning.reasoning.as_ref().unwrap()["encrypted_content"],
+            "Zm9v"
+        );
+        assert_eq!(resp.content[1].block_type, "tool_use");
+
+        // Echoed back on the next turn's assistant message, unchanged and in
+        // the same order.
+        let echoed = serde_json::to_value(&ChatMessage {
+            role: "assistant".into(),
+            content_blocks: Some(resp.content.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+        let blocks = echoed["content_blocks"].as_array().unwrap();
+        assert_eq!(blocks[0]["type"], "reasoning");
+        assert_eq!(blocks[0]["reasoning"]["id"], "rs_abc");
+        assert_eq!(blocks[0]["minted_by"], "gpt-5.6");
+        assert_eq!(blocks[1]["type"], "tool_use");
+    }
+
+    /// A block with no reasoning state omits both fields rather than
+    /// sending nulls a provider would reject.
+    #[test]
+    fn plain_text_block_omits_reasoning_fields() {
+        let block = ContentBlock {
+            block_type: "text".into(),
+            text: Some("hello".into()),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&block).unwrap();
+        assert!(v.get("reasoning").is_none());
+        assert!(v.get("minted_by").is_none());
+        assert!(v.get("thought_signature").is_none());
+    }
+
+    /// Gemini 3 puts the signature on the TEXT block, not only on tool_use.
+    #[test]
+    fn thought_signature_rides_a_text_block() {
+        let resp: ChatResponse = serde_json::from_str(
+            r#"{"id":"r","model":"gemini-3.5-flash","stop_reason":"stop",
+                "content":[{"type":"text","text":"hi","thought_signature":"c2ln"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(resp.content[0].thought_signature.as_deref(), Some("c2ln"));
+
+        let echoed = serde_json::to_value(&resp.content[0]).unwrap();
+        assert_eq!(echoed["thought_signature"], "c2ln");
+    }
+
+    /// provider_options is an open map: an unknown provider key and an
+    /// unknown key under a known provider both survive the round trip.
+    #[test]
+    fn provider_options_passes_through_unknown_keys() {
+        let req = ChatRequest {
+            model: "gpt-5.6".into(),
+            messages: vec![ChatMessage::user("hi")],
+            provider_options: Some(HashMap::from([
+                (
+                    "openai".to_string(),
+                    serde_json::json!({
+                        "reasoning_summary": "detailed",
+                        "reasoning_mode": "pro",
+                        "verbosity": "low",
+                        "text_format": "json_object",
+                        "a_key_this_sdk_never_heard_of": 42
+                    }),
+                ),
+                ("xai".to_string(), serde_json::json!({"native_files": true})),
+            ])),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["provider_options"]["openai"]["reasoning_mode"], "pro");
+        assert_eq!(v["provider_options"]["openai"]["text_format"], "json_object");
+        assert_eq!(
+            v["provider_options"]["openai"]["a_key_this_sdk_never_heard_of"],
+            42
+        );
+        assert_eq!(v["provider_options"]["xai"]["native_files"], true);
+    }
+
+    /// Every tier the gateway validates, `max` included, serializes as-is.
+    #[test]
+    fn reasoning_effort_carries_every_tier() {
+        for tier in ["none", "low", "medium", "high", "xhigh", "max"] {
+            let req = ChatRequest {
+                model: "gpt-5.6".into(),
+                messages: vec![ChatMessage::user("hi")],
+                reasoning_effort: Some(tier.into()),
+                ..Default::default()
+            };
+            assert_eq!(serde_json::to_value(&req).unwrap()["reasoning_effort"], tier);
+        }
+    }
+
+    /// The `thought_signature` SSE event the gateway sends before `done`.
+    #[tokio::test]
+    async fn thought_signature_stream_event_is_parsed() {
+        use futures_util::StreamExt;
+        let body = concat!(
+            "data: {\"type\":\"content_delta\",\"delta\":{\"text\":\"hi\"}}\n\n",
+            "data: {\"type\":\"thought_signature\",\"thought_signature\":\"c2ln\"}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let chunks = futures_util::stream::iter(vec![Ok::<bytes::Bytes, reqwest::Error>(
+            bytes::Bytes::from_static(body.as_bytes()),
+        )]);
+        let events: Vec<StreamEvent> = sse_to_events(chunks).collect().await;
+
+        let sig = events
+            .iter()
+            .find(|e| e.event_type == "thought_signature")
+            .expect("thought_signature event");
+        assert_eq!(sig.thought_signature.as_deref(), Some("c2ln"));
+        assert!(events[0].thought_signature.is_none());
     }
 }
