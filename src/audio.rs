@@ -5,25 +5,107 @@ use crate::error::{ApiError, Error, Result};
 use crate::serde_util::null_as_default;
 
 /// Request body for text-to-speech.
+///
+/// Only [`text`](Self::text) is required. Leaving [`model`](Self::model)
+/// empty gets the gateway's house voice: `gemini-3.1-flash-tts-preview`
+/// with the `Laomedeia` voice.
+///
+/// Most of the steering is prose, not parameters — see
+/// [`instructions`](Self::instructions) and the inline audio tags described
+/// in the crate README under "Steering a Gemini voice".
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct TextToSpeechRequest {
-    /// TTS model (e.g. "tts-1", "eleven_multilingual_v2", "grok-3-tts").
+    /// TTS model. Empty = the gateway default,
+    /// `gemini-3.1-flash-tts-preview`, paired with the `Laomedeia` voice.
+    /// Also `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`,
+    /// OpenAI `openai-tts-1` / `gpt-4o-mini-tts`, xAI `grok-tts`, ElevenLabs
+    /// `eleven_*`.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub model: String,
 
-    /// Text to synthesise into speech.
+    /// Text to synthesise into speech. May carry inline audio tags
+    /// (`[whispers]`, `[excited]`, …) and, for dialogue, the speaker labels
+    /// named in [`speakers`](Self::speakers).
     pub text: String,
 
-    /// Voice to use (e.g. "alloy", "echo", "nova", "Rachel").
+    /// Voice to use — an id from [`Client::list_voices`]. Gemini's default is
+    /// `Laomedeia`. Ignored when [`speakers`](Self::speakers) is set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice: Option<String>,
 
-    /// Audio format (e.g. "mp3", "wav", "opus"). Default: "mp3".
+    /// Audio format: "mp3" (default), "wav", "opus", "pcm".
     #[serde(rename = "format", skip_serializing_if = "Option::is_none")]
     pub output_format: Option<String>,
 
-    /// Speech rate (provider-dependent).
+    /// Speech rate, 0.7–1.5. xAI only — on Gemini, ask for it in
+    /// [`instructions`](Self::instructions) ("at a slow, measured pace").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f64>,
+
+    /// Style direction: tone, pace, accent, character. On Gemini this is
+    /// prepended to the prompt and is the main way to steer the read. On
+    /// OpenAI only `gpt-4o-mini-tts` honours it — `tts-1`/`tts-1-hd` reject
+    /// the field, so the gateway drops it for them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+
+    /// BCP-47 language tag, e.g. "en-GB", "es-ES", or "auto". Gemini detects
+    /// the language on its own; set this to pin the pronunciation or accent
+    /// family. Also drives xAI pronunciation, where an English default sounds
+    /// robotic on other languages.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+
+    /// Output sample rate in Hz, e.g. 24000 or 44100. xAI only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<i32>,
+
+    /// Output bit rate in bits/sec, e.g. 128000. xAI only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_rate: Option<i32>,
+
+    /// ElevenLabs synthesis tuning. Ignored by every other provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_settings: Option<TtsVoiceSettings>,
+
+    /// Two-voice dialogue on Gemini TTS. Each entry pairs a speaker label
+    /// used in [`text`](Self::text) ("Lacey: …") with the prebuilt voice that
+    /// reads it. **Exactly two** — the gateway rejects any other count with a
+    /// 400 — and [`voice`](Self::voice) is then ignored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<Vec<TtsSpeaker>>,
+}
+
+/// ElevenLabs voice tuning. Every field is optional: an absent one leaves the
+/// provider default alone, which is not the same as sending 0.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TtsVoiceSettings {
+    /// 0.0–1.0. Lower is more expressive and less consistent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stability: Option<f64>,
+
+    /// 0.0–1.0. How closely to track the original voice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub similarity_boost: Option<f64>,
+
+    /// 0.0–1.0. Style exaggeration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<f64>,
+
+    /// Boost resemblance to the original speaker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_speaker_boost: Option<bool>,
+}
+
+/// One voice in a Gemini two-speaker dialogue.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TtsSpeaker {
+    /// The label this speaker's lines carry in the text, e.g. "Lacey" for
+    /// lines written as `Lacey: …`.
+    pub name: String,
+
+    /// The prebuilt voice that reads those lines, e.g. "Laomedeia".
+    pub voice: String,
 }
 
 /// Backwards-compatible alias.
@@ -1484,5 +1566,131 @@ mod tests {
         )
         .expect("deserialise");
         assert!(r.duration_seconds.is_none(), "a duration was invented");
+    }
+}
+
+#[cfg(test)]
+mod tts_contract_tests {
+    use super::*;
+    use crate::voices::VoicesResponse;
+
+    /// The house default: text alone is a complete request, and the gateway
+    /// supplies gemini-3.1-flash-tts-preview + Laomedeia. Sending an empty
+    /// model string would pin the request to a model that does not exist.
+    #[test]
+    fn text_alone_is_a_complete_request() {
+        let req = TextToSpeechRequest {
+            text: "Hello".into(),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["text"], "Hello");
+        assert!(v.get("model").is_none(), "an empty model was sent");
+        assert!(v.get("voice").is_none());
+        assert!(v.get("speakers").is_none());
+        assert!(v.get("voice_settings").is_none());
+    }
+
+    /// Every steering field rides under the name the handler decodes.
+    #[test]
+    fn the_steering_fields_use_the_wire_names() {
+        let req = TextToSpeechRequest {
+            model: "gemini-3.1-flash-tts-preview".into(),
+            text: "[excited] Hi! [whispers] can you keep a secret?".into(),
+            voice: Some("Laomedeia".into()),
+            output_format: Some("wav".into()),
+            speed: Some(1.1),
+            instructions: Some("Read aloud with a natural British accent".into()),
+            language: Some("en-GB".into()),
+            sample_rate: Some(24000),
+            bit_rate: Some(128_000),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&req).unwrap();
+
+        assert_eq!(v["model"], "gemini-3.1-flash-tts-preview");
+        assert_eq!(v["voice"], "Laomedeia");
+        // output_format rides as "format" — the handler reads no other key.
+        assert_eq!(v["format"], "wav");
+        assert!(v.get("output_format").is_none());
+        assert_eq!(v["speed"], 1.1);
+        assert_eq!(v["instructions"], "Read aloud with a natural British accent");
+        assert_eq!(v["language"], "en-GB");
+        assert_eq!(v["sample_rate"], 24000);
+        assert_eq!(v["bit_rate"], 128_000);
+    }
+
+    /// Two speakers, and the labels match the ones the text carries.
+    #[test]
+    fn a_two_speaker_dialogue_serializes() {
+        let req = TextToSpeechRequest {
+            text: "Lacey: Hi there.\nCustomer: [excited] Hi!".into(),
+            instructions: Some("Lacey is calm; the customer is cheerful".into()),
+            speakers: Some(vec![
+                TtsSpeaker { name: "Lacey".into(), voice: "Laomedeia".into() },
+                TtsSpeaker { name: "Customer".into(), voice: "Puck".into() },
+            ]),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        let speakers = v["speakers"].as_array().unwrap();
+
+        assert_eq!(speakers.len(), 2, "gemini takes exactly two speakers");
+        assert_eq!(speakers[0]["name"], "Lacey");
+        assert_eq!(speakers[0]["voice"], "Laomedeia");
+        assert_eq!(speakers[1]["name"], "Customer");
+        assert_eq!(speakers[1]["voice"], "Puck");
+    }
+
+    /// An unset ElevenLabs knob is absent, not zero — 0.0 stability is a real
+    /// setting the provider honours, so a zeroed object silently retunes the
+    /// voice.
+    #[test]
+    fn voice_settings_omit_what_was_not_set() {
+        let req = TextToSpeechRequest {
+            text: "hi".into(),
+            voice_settings: Some(TtsVoiceSettings {
+                stability: Some(0.4),
+                use_speaker_boost: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let vs = &serde_json::to_value(&req).unwrap()["voice_settings"];
+
+        assert_eq!(vs["stability"], 0.4);
+        assert_eq!(vs["use_speaker_boost"], true);
+        assert!(vs.get("similarity_boost").is_none(), "an unset knob was sent as zero");
+        assert!(vs.get("style").is_none(), "an unset knob was sent as zero");
+    }
+
+    /// The voice catalogue a picker is built from.
+    #[test]
+    fn the_voice_listing_decodes_every_documented_field() {
+        let body = r#"{
+            "voices": [
+                {"voice_id": "Laomedeia", "name": "Laomedeia", "category": "premade",
+                 "provider": "gemini", "model": "gemini-3.1-flash-tts-preview",
+                 "is_cloned": false},
+                {"voice_id": "el_7f3", "name": "Rachel", "category": "cloned",
+                 "provider": "elevenlabs", "model": "eleven_multilingual_v2",
+                 "is_cloned": true, "description": "warm narrator",
+                 "preview_url": "https://cdn/x.mp3"}
+            ],
+            "request_id": "qai_req_1"
+        }"#;
+        let r: VoicesResponse = serde_json::from_str(body).expect("deserialise");
+        assert_eq!(r.voices.len(), 2);
+
+        let gemini = &r.voices[0];
+        assert_eq!(gemini.voice_id, "Laomedeia");
+        assert_eq!(gemini.provider.as_deref(), Some("gemini"));
+        // The model to pass to speak() for this voice, so a client never
+        // hardcodes the provider->model mapping.
+        assert_eq!(gemini.model.as_deref(), Some("gemini-3.1-flash-tts-preview"));
+
+        let el = &r.voices[1];
+        assert_eq!(el.category, "cloned");
+        assert_eq!(el.provider.as_deref(), Some("elevenlabs"));
     }
 }

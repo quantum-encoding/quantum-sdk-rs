@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.12.0
+
+The TTS request catches up with the gateway: a house voice you do not have to
+name, and prose steering for Gemini.
+
+### Added
+- `TextToSpeechRequest.instructions` — style direction: tone, pace, accent,
+  character. On Gemini it is prepended to the prompt and is the main way to
+  steer a read, since Gemini exposes no knobs for any of it. On OpenAI only
+  `gpt-4o-mini-tts` honours it; `tts-1`/`tts-1-hd` reject the field and the
+  gateway drops it for them.
+- `TextToSpeechRequest.language` — BCP-47 tag (`en-GB`, `es-ES`, `auto`).
+  Gemini detects the language on its own; set this to pin the pronunciation or
+  accent family. Also drives xAI pronunciation, where an English default sounds
+  robotic on other languages.
+- `TextToSpeechRequest.sample_rate` and `.bit_rate` — Hz and bits/sec, xAI only.
+- `TextToSpeechRequest.voice_settings` and the new `TtsVoiceSettings`
+  (`stability`, `similarity_boost`, `style`, `use_speaker_boost`). ElevenLabs
+  only. Every field is `Option`: an absent knob leaves the provider default
+  alone, and 0.0 stability is a real setting, so a zeroed object would silently
+  retune the voice.
+- `TextToSpeechRequest.speakers` and the new `TtsSpeaker` (`name`, `voice`) —
+  Gemini two-voice dialogue. Each entry pairs a speaker label used in the text
+  ("Lacey: …") with the prebuilt voice that reads it. Exactly two; the gateway
+  rejects any other count with a 400, and `voice` is then ignored.
+
+### Changed
+- `TextToSpeechRequest.model` is now optional on the wire: an empty string is
+  omitted rather than sent. `text` alone is a complete request, and the gateway
+  supplies its house default — `gemini-3.1-flash-tts-preview` with the
+  `Laomedeia` voice. Previously an unset model serialized as `"model": ""`,
+  pinning the request to a model that does not exist.
+
+  Not source-breaking: the field is still `String` and still set the same way.
+
+### Docs
+- README gains "Steering a Gemini voice", summarising `docs/TTS_GUIDE.md`:
+  `instructions` for tone/accent/pace, the inline audio tags (`[whispers]`,
+  `[excited]`, …) that go inside `text`, two-speaker dialogue, the 30 Gemini
+  prebuilt voices, and which fields are xAI- or ElevenLabs-only.
+
+Additive against an older gateway: the new fields are simply absent.
+
 ## 0.11.0
 
 The reasoning state a tool loop has to hand back, and the cache key that keeps a

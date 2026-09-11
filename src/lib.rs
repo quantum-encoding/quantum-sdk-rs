@@ -127,8 +127,8 @@ pub use audio::{
     RemixVoiceRequest, RemixVoiceResponse, SoundEffectRequest, SoundEffectResponse,
     SpeechToSpeechRequest, SpeechToSpeechResponse, SpeechToTextRequest, SpeechToTextResponse,
     StarfishTTSRequest, StarfishTTSResponse, SttRequest, SttResponse, TextToSpeechRequest,
-    TextToSpeechResponse, TtsRequest, TtsResponse, VoiceDesignRequest, VoiceDesignResponse,
-    VoicePreview,
+    TextToSpeechResponse, TtsRequest, TtsResponse, TtsSpeaker, TtsVoiceSettings,
+    VoiceDesignRequest, VoiceDesignResponse, VoicePreview,
 };
 
 // Account types
