@@ -127,32 +127,6 @@ pub struct GeneratedVideo {
 pub type JobResponse = JobAcceptedResponse;
 
 // ---------------------------------------------------------------------------
-// HeyGen Studio
-// ---------------------------------------------------------------------------
-
-/// Request body for a HeyGen studio talking-head video: one avatar reading
-/// one script in one voice. All three fields are required.
-///
-/// Submission is gated by a balance preflight estimated from the script
-/// length (per-second render rate at a nominal reading speed, with a
-/// minimum), so an under-funded caller gets 402 at submit rather than a
-/// failed job.
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct VideoStudioRequest {
-    /// HeyGen avatar id.
-    pub avatar_id: String,
-
-    /// Script the avatar speaks.
-    pub script: String,
-
-    /// HeyGen voice id.
-    pub voice_id: String,
-}
-
-/// Backwards-compatible alias.
-pub type StudioVideoRequest = VideoStudioRequest;
-
-// ---------------------------------------------------------------------------
 // HeyGen Translate
 // ---------------------------------------------------------------------------
 
@@ -736,15 +710,6 @@ impl Client {
         Ok(resp)
     }
 
-    /// Creates a HeyGen studio talking-head video (async job type
-    /// "video/studio"). Poll the returned `job_id` for the result.
-    pub async fn video_studio(&self, req: &VideoStudioRequest) -> Result<JobAcceptedResponse> {
-        let (resp, _meta) = self
-            .post_json::<VideoStudioRequest, JobAcceptedResponse>("/qai/v1/video/studio", req)
-            .await?;
-        Ok(resp)
-    }
-
     /// Translates a video into another language (HeyGen; async job type
     /// "video/translate"). A flat hold is taken at submit and trued up
     /// when the job settles.
@@ -906,17 +871,6 @@ mod tests {
         let mut keys: Vec<String> = value.as_object().expect("object").keys().cloned().collect();
         keys.sort();
         keys
-    }
-
-    #[test]
-    fn studio_request_carries_the_three_required_keys() {
-        let json = serde_json::to_value(VideoStudioRequest {
-            avatar_id: "av".into(),
-            script: "Hello".into(),
-            voice_id: "vc".into(),
-        })
-        .unwrap();
-        assert_eq!(keys(&json), ["avatar_id", "script", "voice_id"]);
     }
 
     #[test]

@@ -17,8 +17,8 @@ pub struct JobCreateRequest {
 }
 
 /// The 202 envelope every async submission answers with: the Jobs API,
-/// the HeyGen video routes (studio, translate, photo-avatar, twin-video,
-/// template render) and the 3D pipeline. Poll with [`Client::get_job`] /
+/// the HeyGen video routes (translate, photo-avatar, twin-video, template
+/// render) and the 3D pipeline. Poll with [`Client::get_job`] /
 /// [`Client::poll_job`] or subscribe with [`Client::stream_job`].
 ///
 /// No cost appears here; `cost_ticks` is reported by [`Client::get_job`]
@@ -32,7 +32,7 @@ pub struct JobAcceptedResponse {
     #[serde(default)]
     pub status: String,
 
-    /// Job type (e.g. "video/studio", "3d/generate").
+    /// Job type (e.g. "video/talking-photo", "3d/generate").
     #[serde(rename = "type", default)]
     pub job_type: Option<String>,
 
@@ -168,8 +168,7 @@ impl Client {
         Ok(resp)
     }
 
-    /// Checks the status of an async job. Batch jobs live in a different
-    /// store: read those with [`Client::batch_job`].
+    /// Checks the status of an async job.
     pub async fn get_job(&self, job_id: &str) -> Result<JobStatusResponse> {
         let path = format!("/qai/v1/jobs/{job_id}");
         let (resp, _meta) = self.get_json::<JobStatusResponse>(&path).await?;
@@ -283,10 +282,10 @@ mod tests {
 
         // The HeyGen routes send job_id/status/type/request_id only.
         let media: JobAcceptedResponse = serde_json::from_str(
-            r#"{"job_id":"qai_job_2","status":"pending","type":"video/studio","request_id":"req_2"}"#,
+            r#"{"job_id":"qai_job_2","status":"pending","type":"video/talking-photo","request_id":"req_2"}"#,
         )
         .unwrap();
-        assert_eq!(media.job_type.as_deref(), Some("video/studio"));
+        assert_eq!(media.job_type.as_deref(), Some("video/talking-photo"));
         assert!(media.created_at.is_none());
     }
 

@@ -353,80 +353,6 @@ pub struct SearchContextResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Search Answer (AI-generated answer with citations)
-// ---------------------------------------------------------------------------
-
-/// A chat message for the search answer endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchAnswerMessage {
-    /// Message role ("user", "assistant", "system").
-    pub role: String,
-
-    /// Message text content.
-    pub content: String,
-}
-
-/// Request body for search answer (AI-generated answer grounded in search).
-#[derive(Debug, Clone, Serialize, Default)]
-pub struct SearchAnswerRequest {
-    /// Conversation messages.
-    pub messages: Vec<SearchAnswerMessage>,
-
-    /// Model to use for answer generation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-}
-
-/// A citation reference in a search answer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchAnswerCitation {
-    /// Source URL.
-    pub url: String,
-
-    /// Source title.
-    #[serde(default)]
-    pub title: String,
-
-    /// Snippet from the source.
-    #[serde(default)]
-    pub snippet: Option<String>,
-}
-
-/// A choice in the search answer response.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchAnswerChoice {
-    /// Choice index.
-    pub index: i32,
-
-    /// The generated message, absent when the choice carries none.
-    #[serde(default)]
-    pub message: Option<SearchAnswerMessage>,
-
-    /// Finish reason (e.g. "stop").
-    #[serde(default)]
-    pub finish_reason: Option<String>,
-}
-
-/// Response from the search answer endpoint.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchAnswerResponse {
-    /// Generated answer choices.
-    pub choices: Vec<SearchAnswerChoice>,
-
-    /// Model that produced the answer.
-    #[serde(default)]
-    pub model: String,
-
-    /// Unique response identifier.
-    #[serde(default)]
-    pub id: String,
-
-    /// Citations used in the answer.
-    #[serde(default, deserialize_with = "null_as_default")]
-    pub citations: Vec<SearchAnswerCitation>,
-}
-
-// ---------------------------------------------------------------------------
 // Google Grounded Search — Gemini Flash + google_search tool
 // ---------------------------------------------------------------------------
 
@@ -526,22 +452,14 @@ impl Client {
         Ok(resp)
     }
 
-    /// Generates an AI-powered answer grounded in live web search results,
-    /// with citations.
-    pub async fn search_answer(&self, req: &SearchAnswerRequest) -> Result<SearchAnswerResponse> {
-        let (resp, _meta) = self
-            .post_json::<SearchAnswerRequest, SearchAnswerResponse>("/qai/v1/search/answer", req)
-            .await?;
-        Ok(resp)
-    }
-
     /// Performs a Google grounded search via Gemini Flash + the
     /// google_search built-in tool. Returns a grounded answer plus
     /// citations, the ToS-required search-entry-point widget, and the
     /// list of queries Gemini actually executed.
     ///
-    /// Billed per executed query ($0.035 each). `search_answer` is the
-    /// Brave-backed alternative for cheap high-volume search.
+    /// Billed per executed query ($0.035 each). [`Client::web_search`] and
+    /// [`Client::search_context`] are the Brave-backed alternatives for cheap
+    /// high-volume search.
     pub async fn google_search(&self, req: &GoogleSearchRequest) -> Result<GoogleSearchResponse> {
         let (resp, _meta) = self
             .post_json::<GoogleSearchRequest, GoogleSearchResponse>("/qai/v1/search/google", req)

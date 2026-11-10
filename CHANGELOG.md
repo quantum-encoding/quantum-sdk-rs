@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+The gateway retired 32 routes on 2026-11-10; every call to them answers 404.
+This release removes the SDK surface that called them.
+
+### Breaking
+- **User batch** (`POST /qai/v1/batch`, `/batch/jsonl`, `GET /batch/jobs`,
+  `/batch/jobs/{id}`): the `batch` module is gone, with `batch_submit`,
+  `batch_submit_jsonl`, `batch_jobs`, `batch_job` and the types `BatchJob`,
+  `BatchJobInput`, `BatchSubmitRequest`, `BatchSubmitResponse`,
+  `BatchJsonlResponse`, `BatchJobInfo`, `BatchJobsResponse`. HeyGen video
+  batches (`video_batch_submit`, `video_batch_status`) are unaffected.
+- **Documents** (`POST /qai/v1/documents/extract`, `/chunk`, `/process`): the
+  `documents` module is gone, with `extract_document`, `chunk_document`,
+  `process_document` and the types `DocumentRequest`, `DocumentResponse`,
+  `DocumentMeta`, `DocumentImage`, `DocumentChunk`, `ChunkDocumentRequest`,
+  `ChunkDocumentResponse`, `ChunkRequest`, `ChunkResponse`,
+  `ProcessDocumentRequest`, `ProcessDocumentResponse`, `ProcessRequest`,
+  `ProcessResponse`.
+- **Code scanner** (`/qai/v1/scanner/*`): the `scanner` module is gone, with
+  `scanner_scan`, `scanner_upload`, `scanner_diff`, `scanner_verify`,
+  `scanner_audit`, `scanner_vulnerabilities`, `scanner_scans`,
+  `scanner_scan_get`, `scanner_scan_delete`, `scanner_types`, `scanner_type`,
+  `scanner_graph_svg` and the types `ScanRequest`, `ScanResult`, `ScanStats`,
+  `ScanListResponse`, `ScanDeleteResponse`, `ScanTypeSummary`,
+  `ScanTypeListResponse`, `ScanTypeDetail`, `CodebaseGraph`, `CodeModule`,
+  `CodeField`, `CodeType`, `CodeFunction`, `CallEdge`, `DiffRequest`,
+  `DiffResult`, `ConventionDiff`, `Blueprint`, `BlueprintType`,
+  `BlueprintFunction`, `BlueprintModule`, `VerifyRequest`, `VerifyResult`,
+  `FileStatus`, `AuditJobResponse`, `AuditFileResult`, `AuditResult`,
+  `VulnerabilityScanOptions`, `VulnerabilityScanRequest`. The `security`
+  module (`scan-code`, `scan-url`, `scan-html`) is unaffected.
+- **Model deployments** (`GET /qai/v1/compute/catalog`,
+  `POST /qai/v1/compute/deploy-model`, `/compute/deployments` list, get,
+  extend and delete): `compute_catalog`, `compute_deploy_model_estimate`,
+  `compute_deploy_model`, `compute_deployments`, `compute_deployment`,
+  `compute_deployment_extend`, `compute_deployment_delete` and the types
+  `KnownModel`, `ComputeCatalogResponse`, `DeployModelRequest`,
+  `DeployModelEstimate`, `DeployModelAccepted`, `ModelDeployment`,
+  `DeploymentsResponse`, `ExtendDeploymentRequest`,
+  `ExtendDeploymentResponse`, `DeploymentDeleteResponse`. GPU instance rental
+  (`compute_templates`, `compute_provision`, `compute_instances`, …) and
+  `inference` / `inference_stream` are unaffected.
+- **Search answer** (`POST /qai/v1/search/answer`): `search_answer` and the
+  types `SearchAnswerRequest`, `SearchAnswerResponse`, `SearchAnswerMessage`,
+  `SearchAnswerChoice`, `SearchAnswerCitation`. `web_search`,
+  `search_context` and `google_search` are unaffected.
+- **HeyGen studio** (`POST /qai/v1/video/studio`): `video_studio` and the
+  types `VideoStudioRequest` and its alias `StudioVideoRequest`. A talking
+  head from a photo is `video_photo_avatar`; a trained avatar is
+  `video_twin`.
+
+### Unchanged
+- `video_photo_avatar` / `PhotoAvatarRequest`: the route now accepts only the
+  talking-photo body (`photo_base64` + `script`), which is the only body this
+  SDK ever sent.
+
 ## 0.12.0
 
 The TTS request catches up with the gateway: a house voice you do not have to

@@ -429,9 +429,8 @@ impl Client {
     /// # What the gateway does with the key
     ///
     /// Only routes billed through the gateway's `DeductAndTrack` rail read
-    /// `Idempotency-Key`: agent, batch, jobs, search, scanner, rag,
-    /// documents, vision, voice, compute and deployments, inference,
-    /// missions, cloudrun and security. On those the billing result is
+    /// `Idempotency-Key`: agent, jobs, search, rag, vision, voice, compute,
+    /// inference, missions, cloudrun and security. On those the billing result is
     /// cached for 24 hours under (key, account) — the request body is not
     /// part of the cache key, so a key reused for a *different* payload
     /// returns the first request's billing result while the provider still

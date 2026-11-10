@@ -1,6 +1,6 @@
 //! Integration tests for the gateway surfaces added alongside chat: media
-//! sessions, files, context caches, RAG collections, model deployments,
-//! licences, and the scanner.
+//! sessions, files, context caches, RAG collections, licences, and the agent
+//! runtime.
 //!
 //! Each test asserts the method, path, and body the SDK actually puts on the
 //! wire — the things a typed struct cannot catch on its own. The gateway is
@@ -14,7 +14,7 @@ use tokio::net::TcpListener;
 
 use quantum_sdk::{
     CacheCreateRequest, Client, CollectionSearchRequest, CreateCollectionRequest,
-    DeployModelRequest, DiffRequest, MediaSessionChatRequest, MediaSessionCreateRequest,
+    MediaSessionChatRequest, MediaSessionCreateRequest,
 };
 
 const TEST_KEY: &str = "qai_test_key";
@@ -328,62 +328,6 @@ async fn collection_create_carries_description_and_provider() {
 }
 
 #[tokio::test]
-async fn deploy_model_estimate_never_sets_confirmed() {
-    let gw = mock_gateway(
-        r#"{"cost_per_hour_usd":30.5,"total_estimate_usd":61.0,"total_ticks":610000000000,
-            "duration_hours":2,"model_display_name":"Nemotron 3 Super 120B",
-            "model":"publishers/nvidia/models/nemotron-3-super","machine_type":"a4-highgpu-8g",
-            "accelerator_type":"NVIDIA_B200","accelerator_count":8,"region":"us-east1",
-            "note":"resubmit with confirmed:true to deploy"}"#,
-    )
-    .await;
-
-    let estimate = gw
-        .client()
-        .compute_deploy_model_estimate(&DeployModelRequest {
-            model: "nemotron-3-super-120b".into(),
-            confirmed: Some(true), // must be stripped by the estimate call
-            ..Default::default()
-        })
-        .await
-        .expect("estimate succeeds");
-
-    let req = gw.only_request();
-    assert_eq!(req.path, "/qai/v1/compute/deploy-model");
-    assert!(
-        req.body_json().get("confirmed").is_none(),
-        "the estimate call must not confirm a deployment"
-    );
-    assert_eq!(estimate.duration_hours, 2);
-    assert_eq!(estimate.total_ticks, 610_000_000_000);
-}
-
-#[tokio::test]
-async fn deploy_model_confirms_when_provisioning() {
-    let gw = mock_gateway(
-        r#"{"deployment_id":"dep_1","status":"provisioning",
-            "model_display_name":"Nemotron 3 Super 120B","cost_per_hour_usd":30.5,
-            "total_cost_usd":61.0,"expires_at":"2026-01-01T02:00:00Z",
-            "operation":"projects/p/operations/o","note":"poll GET ..."}"#,
-    )
-    .await;
-
-    let accepted = gw
-        .client()
-        .compute_deploy_model(&DeployModelRequest {
-            model: "nemotron-3-super-120b".into(),
-            duration_hours: Some(2),
-            ..Default::default()
-        })
-        .await
-        .expect("deploy succeeds");
-
-    assert_eq!(gw.only_request().body_json()["confirmed"], true);
-    assert_eq!(accepted.deployment_id, "dep_1");
-    assert_eq!(accepted.status, "provisioning");
-}
-
-#[tokio::test]
 async fn licenses_mine_filters_by_app() {
     let gw = mock_gateway(
         r#"{"licenses":[{"id":"lic_1","app":"demo-app","sku":"pro","source":"stripe",
@@ -403,51 +347,6 @@ async fn licenses_mine_filters_by_app() {
     // The space is the point: it must reach the wire percent-encoded.
     assert_eq!(req.path, "/qai/v1/licenses/mine?app=demo%20app");
     assert_eq!(resp.licenses[0].license_key, "ey.jwt");
-}
-
-#[tokio::test]
-async fn scanner_diff_posts_scan_ids_as_base_and_target() {
-    let gw = mock_gateway(
-        r#"{"base":"rust","target":"go","missing_types":["ChatUsage"],"extra_types":[],
-            "missing_fields":{"ChatRequest":["region"]},"completion":0.9,"total_gaps":2}"#,
-    )
-    .await;
-
-    let diff = gw
-        .client()
-        .scanner_diff(&DiffRequest {
-            base_scan_id: Some("scan_a".into()),
-            target_scan_id: Some("scan_b".into()),
-            ..Default::default()
-        })
-        .await
-        .expect("diff succeeds");
-
-    let req = gw.only_request();
-    assert_eq!(req.path, "/qai/v1/scanner/diff");
-    let body = req.body_json();
-    assert_eq!(body["base"], "scan_a");
-    assert_eq!(body["target"], "scan_b");
-    assert_eq!(diff.total_gaps, 2);
-}
-
-#[tokio::test]
-async fn scanner_type_query_url_encodes_the_type_name() {
-    let gw = mock_gateway(
-        r#"{"type":{"name":"Vec<CodeType>","kind":"struct","file":"src/scanner.rs",
-                    "fields":[]},"scan_id":"s1","scan_name":"rust"}"#,
-    )
-    .await;
-
-    let detail = gw
-        .client()
-        .scanner_type("s1", "Vec<CodeType>")
-        .await
-        .expect("type query succeeds");
-
-    let req = gw.only_request();
-    assert_eq!(req.path, "/qai/v1/scanner/scans/s1/types/Vec%3CCodeType%3E");
-    assert_eq!(detail.code_type.name, "Vec<CodeType>");
 }
 
 #[tokio::test]

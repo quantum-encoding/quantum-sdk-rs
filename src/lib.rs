@@ -2,14 +2,13 @@
 //!
 //! One [`Client`] covers the whole gateway surface: chat and streaming
 //! ([`chat`], [`session`], [`media_sessions`]), agents and missions ([`agent`],
-//! [`agent_runtime`], [`missions`], [`cloudrun`], [`jobs`], [`batch`]),
-//! media generation ([`image`], [`video`], [`avatar`], [`audio`], [`voices`],
-//! [`mesh`], [`vision`]), realtime voice ([`realtime`]), retrieval
-//! ([`embeddings`], [`documents`], [`rag`], [`search`], [`scraper`], [`caches`],
-//! [`files`]), code and security scanning ([`scanner`], [`security`]), GPU
-//! compute and model deployments ([`compute`], [`inference`]), and account
-//! administration ([`account`], [`auth`], [`credits`], [`keys`], [`licenses`],
-//! [`models`], [`region`], [`contact`]).
+//! [`agent_runtime`], [`missions`], [`cloudrun`], [`jobs`]), media generation
+//! ([`image`], [`video`], [`avatar`], [`audio`], [`voices`], [`mesh`],
+//! [`vision`]), realtime voice ([`realtime`]), retrieval ([`embeddings`],
+//! [`rag`], [`search`], [`scraper`], [`caches`], [`files`]), security scanning
+//! ([`security`]), GPU compute and deployment inference ([`compute`],
+//! [`inference`]), and account administration ([`account`], [`auth`],
+//! [`credits`], [`keys`], [`licenses`], [`models`], [`region`], [`contact`]).
 //!
 //! # Example
 //!
@@ -34,7 +33,6 @@ pub mod agent_runtime;
 pub mod audio;
 pub mod auth;
 pub mod avatar;
-pub mod batch;
 pub mod caches;
 pub mod chat;
 pub mod client;
@@ -42,7 +40,6 @@ pub mod cloudrun;
 pub mod compute;
 pub mod contact;
 pub mod credits;
-pub mod documents;
 pub mod embeddings;
 pub mod error;
 pub mod files;
@@ -59,7 +56,6 @@ pub mod models;
 pub mod rag;
 pub mod realtime;
 pub mod region;
-pub mod scanner;
 pub mod scraper;
 pub mod search;
 pub mod security;
@@ -101,10 +97,10 @@ pub use image::{GeneratedImage, ImageEditRequest, ImageEditResponse, ImageReques
 // Video types
 pub use video::{
     Avatar, AvatarsResponse, DigitalTwinCreateRequest, DigitalTwinCreateResponse, GeneratedVideo,
-    HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, StudioVideoRequest,
-    TranslateRequest, TwinVideoRequest, VideoBatchItem, VideoBatchItemError, VideoBatchStatusQuery,
+    HeyGenVoice, HeyGenVoicesResponse, JobResponse, PhotoAvatarRequest, TranslateRequest,
+    TwinVideoRequest, VideoBatchItem, VideoBatchItemError, VideoBatchStatusQuery,
     VideoBatchStatusResponse, VideoBatchSubmitRequest, VideoBatchSubmitResponse, VideoRequest,
-    VideoResponse, VideoStudioRequest, VideoSubtitlePosition, VideoTemplate, VideoTemplateDetail,
+    VideoResponse, VideoSubtitlePosition, VideoTemplate, VideoTemplateDetail,
     VideoTemplateDetailResponse, VideoTemplateDimension, VideoTemplateGenerateRequest,
     VideoTemplateScene, VideoTemplateSceneVariable, VideoTemplateSubtitles, VideoTemplatesResponse,
     VideoTranslateRequest,
@@ -157,12 +153,6 @@ pub use keys::{
     RotateKeyRequest, RotateKeyResponse,
 };
 
-// Batch types
-pub use batch::{
-    BatchJob, BatchJobInfo, BatchJobInput, BatchJobsResponse, BatchJsonlResponse,
-    BatchSubmitRequest, BatchSubmitResponse,
-};
-
 // Credits types
 pub use credits::{
     CreditBalanceResponse, CreditPack, CreditPacksResponse, CreditPurchaseRequest,
@@ -204,13 +194,6 @@ pub use contact::ContactRequest;
 // Embeddings types
 pub use embeddings::{EmbedRequest, EmbedResponse};
 
-// Document types
-pub use documents::{
-    ChunkDocumentRequest, ChunkDocumentResponse, ChunkRequest, ChunkResponse, DocumentChunk,
-    DocumentImage, DocumentMeta, DocumentRequest, DocumentResponse, ProcessDocumentRequest,
-    ProcessDocumentResponse, ProcessRequest, ProcessResponse,
-};
-
 // RAG types
 pub use rag::{
     Collection, CollectionDocument, CollectionSearchRequest, CollectionSearchResult,
@@ -229,9 +212,8 @@ pub use scraper::{
 pub use search::{
     Discussion, DiscussionResult, GoogleSearchCitation, GoogleSearchRequest, GoogleSearchResponse,
     GoogleSearchSupport, Infobox, InfoboxResult, MetaUrl, NewsResult, QueryInfo,
-    SearchAnswerChoice, SearchAnswerCitation, SearchAnswerMessage, SearchAnswerRequest,
-    SearchAnswerResponse, SearchContextChunk, SearchContextRequest, SearchContextResponse,
-    SearchContextSource, Thumbnail, VideoResult, WebResult, WebSearchRequest, WebSearchResponse,
+    SearchContextChunk, SearchContextRequest, SearchContextResponse, SearchContextSource,
+    Thumbnail, VideoResult, WebResult, WebSearchRequest, WebSearchResponse,
 };
 
 // Model types
@@ -282,15 +264,6 @@ pub use licenses::{
     License, LicenseJwk, LicensePublicKeyResponse, LicenseRevocationsResponse, LicensesResponse,
 };
 
-// Code scanner types
-pub use scanner::{
-    AuditFileResult, AuditJobResponse, AuditResult, Blueprint, BlueprintFunction, BlueprintModule,
-    BlueprintType, CallEdge, CodeField, CodeFunction, CodeModule, CodeType, CodebaseGraph,
-    ConventionDiff, DiffRequest, DiffResult, FileStatus, ScanDeleteResponse, ScanListResponse,
-    ScanRequest, ScanResult, ScanStats, ScanTypeDetail, ScanTypeListResponse, ScanTypeSummary,
-    VerifyRequest, VerifyResult, VulnerabilityScanOptions, VulnerabilityScanRequest,
-};
-
 // Agent-runtime types
 pub use agent_runtime::{
     AppendEventRequest, OverlayConfig, RuntimeAgent, RuntimeAgentRequest, RuntimeAgentUpdate,
@@ -301,13 +274,6 @@ pub use agent_runtime::{
 
 // Sandbox-backed orchestration types
 pub use cloudrun::{CloudRunEvent, CloudRunRequest, CloudRunWorker};
-
-// Model-deployment types
-pub use compute::{
-    ComputeCatalogResponse, DeployModelAccepted, DeployModelEstimate, DeployModelRequest,
-    DeploymentDeleteResponse, DeploymentsResponse, ExtendDeploymentRequest,
-    ExtendDeploymentResponse, KnownModel, ModelDeployment,
-};
 
 // Realtime speech-to-text token + ElevenLabs proxy types
 pub use audio::RealtimeSttTokenResponse;

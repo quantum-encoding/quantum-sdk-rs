@@ -35,7 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Strongly typed request/response structs
 - Agent orchestration with SSE event streams
 - GPU/CPU compute rental (requires per-account admin approval)
-- Batch processing (async jobs)
 - Zero-copy deserialization with serde
 
 ## Examples
@@ -357,10 +356,10 @@ is replayed on 429 only, honouring the gateway's `Retry-After`. The gateway
 does not dedupe on `Idempotency-Key` for chat, session chat or any media
 route, and key-minting and Stripe checkout routes have no dedupe at all, so
 replaying a `POST` after a 5xx that masked a completed operation would run
-and charge it again. Routes that do dedupe (agent, jobs, batch, search,
-scanner, rag, documents, vision, voice, compute, inference, missions,
-cloudrun, security) can opt in through `post_json_with_idempotency`; see
-its docs for the dedupe cache's limits.
+and charge it again. Routes that do dedupe (agent, jobs, search, rag,
+vision, voice, compute, inference, missions, cloudrun, security) can opt in
+through `post_json_with_idempotency`; see its docs for the dedupe cache's
+limits.
 
 ## All Endpoints
 
@@ -369,14 +368,12 @@ its docs for the dedupe cache's limits.
 | Chat | 3 | Text generation, session chat (buffered and streaming) |
 | Agent | 2 | Multi-step orchestration + missions |
 | Images | 2 | Generation + editing |
-| Video | 7 | Generation, studio, translation, avatars |
+| Video | 12 | Generation, translation, talking photo, digital twins, templates, batches |
 | Audio | 13 | TTS, STT, music, dialogue, dubbing, voice design |
 | Voices | 5 | Clone, list, delete, library, design |
 | Embeddings | 1 | Text embeddings |
 | RAG | 4 | Vertex AI + SurrealDB search |
-| Documents | 3 | Extract, chunk, process |
-| Search | 3 | Web search, context, answers |
-| Scanner | 11 | Code scanning, type queries, diffs |
+| Search | 3 | Web search, context, Google grounded search |
 | Scraper | 2 | Doc scraping + screenshots |
 | Jobs | 3 | Async job management |
 | Compute | 7 | GPU/CPU rental (admin-approved accounts only) |
@@ -384,7 +381,6 @@ its docs for the dedupe cache's limits.
 | Keys | 8 | Create, list, revoke, rotate, usage, device, ephemeral and partner keys |
 | Account | 5 | Balance, usage, summary, deletion |
 | Credits | 8 | Packs, tiers, purchase, lifetime plans |
-| Batch | 4 | Async batch job processing |
 | Realtime | 3 | Voice sessions |
 | Models | 2 | Model list + pricing |
 

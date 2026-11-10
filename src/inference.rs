@@ -1,10 +1,9 @@
 //! Inference against a self-deployed model.
 //!
 //! `POST /qai/v1/inference/{id}` proxies an OpenAI-compatible chat-completion
-//! request to a Vertex endpoint stood up by
-//! [`Client::compute_deploy_model`](crate::Client::compute_deploy_model). The
-//! deployment must be `ready`; the caller must own it, or it must be marked
-//! public. Billing is per token on top of the hourly deployment cost.
+//! request to the Vertex endpoint of a model deployment. The deployment must
+//! be `ready`; the caller must own it, or it must be marked public. Billing is
+//! per token on top of the hourly deployment cost.
 //!
 //! The request and response are forwarded verbatim, so both are untyped here —
 //! the shape is whatever the deployed server speaks (vLLM's OpenAI-compatible
