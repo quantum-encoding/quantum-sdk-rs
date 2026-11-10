@@ -374,13 +374,12 @@ limits.
 | Embeddings | 1 | Text embeddings |
 | RAG | 4 | Vertex AI + SurrealDB search |
 | Search | 3 | Web search, context, Google grounded search |
-| Scraper | 2 | Doc scraping + screenshots |
 | Jobs | 3 | Async job management |
 | Compute | 7 | GPU/CPU rental (admin-approved accounts only) |
 | Auth | 5 | Apple, Google and Firebase sign-in, key verification, sign-out |
 | Keys | 8 | Create, list, revoke, rotate, usage, device, ephemeral and partner keys |
 | Account | 5 | Balance, usage, summary, deletion |
-| Credits | 8 | Packs, tiers, purchase, lifetime plans |
+| Credits | 5 | Packs, tiers, purchase, balance, developer program |
 | Realtime | 3 | Voice sessions |
 | Models | 2 | Model list + pricing |
 
@@ -445,8 +444,6 @@ service that accepts a customer's `qai_k_` key can resolve its owner with
 
 See [api.quantumencoding.ai/pricing](https://api.quantumencoding.ai/pricing) for current rates,
 or call `get_pricing()` for the same table keyed by model id.
-
-The **Lifetime tier** offers 0% margin at-cost pricing via a one-time payment.
 
 ## Other SDKs
 

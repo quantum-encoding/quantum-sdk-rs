@@ -3,7 +3,9 @@
 ## Unreleased
 
 The gateway retired 32 routes on 2026-11-10; every call to them answers 404.
-This release removes the SDK surface that called them.
+This release removes the SDK surface that called them, and the two older
+surfaces whose routes had already gone. Every path the SDK now calls is one
+the gateway serves.
 
 ### Breaking
 - **User batch** (`POST /qai/v1/batch`, `/batch/jsonl`, `GET /batch/jobs`,
@@ -51,6 +53,17 @@ This release removes the SDK surface that called them.
   types `VideoStudioRequest` and its alias `StudioVideoRequest`. A talking
   head from a photo is `video_photo_avatar`; a trained avatar is
   `video_twin`.
+
+- **Lifetime plans** (`GET` and `POST /qai/v1/credits/lifetime`, retired
+  2026-11-07 when lifetime plans stopped being sold): `lifetime_plans`,
+  `lifetime_purchase` and the types `LifetimePlan`, `LifetimePlansResponse`,
+  `LifetimePurchaseRequest`, `LifetimePurchaseResponse`. Existing lifetime
+  holders keep their tier; `credit_tiers` no longer lists it.
+- **Scraper** (`POST /qai/v1/scraper/scrape`, `/screenshot`, retired
+  2026-08-31 and deprecated here since 0.8.2): the `scraper` module is gone,
+  with `scrape`, `screenshot` and the types `ScrapeRequest`, `ScrapeResponse`,
+  `ScrapeTarget`, `ScreenshotRequest`, `ScreenshotResponse`,
+  `ScreenshotResult`, `ScreenshotURL`, `ScreenshotJobResponse`.
 
 ### Unchanged
 - `video_photo_avatar` / `PhotoAvatarRequest`: the route now accepts only the

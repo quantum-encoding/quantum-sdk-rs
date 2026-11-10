@@ -5,7 +5,7 @@
 //! [`agent_runtime`], [`missions`], [`cloudrun`], [`jobs`]), media generation
 //! ([`image`], [`video`], [`avatar`], [`audio`], [`voices`], [`mesh`],
 //! [`vision`]), realtime voice ([`realtime`]), retrieval ([`embeddings`],
-//! [`rag`], [`search`], [`scraper`], [`caches`], [`files`]), security scanning
+//! [`rag`], [`search`], [`caches`], [`files`]), security scanning
 //! ([`security`]), GPU compute and deployment inference ([`compute`],
 //! [`inference`]), and account administration ([`account`], [`auth`],
 //! [`credits`], [`keys`], [`licenses`], [`models`], [`region`], [`contact`]).
@@ -56,7 +56,6 @@ pub mod models;
 pub mod rag;
 pub mod realtime;
 pub mod region;
-pub mod scraper;
 pub mod search;
 pub mod security;
 mod serde_util;
@@ -141,11 +140,6 @@ pub use auth::{
     VerifyKeyResponse,
 };
 
-// Lifetime plan types
-pub use credits::{
-    LifetimePlan, LifetimePlansResponse, LifetimePurchaseRequest, LifetimePurchaseResponse,
-};
-
 // Device, ephemeral and partner key types
 pub use keys::{
     DeviceKey, EphemeralKeyRequest, EphemeralKeyResponse, KeyUsageDay, KeyUsageModel,
@@ -200,12 +194,6 @@ pub use rag::{
     CollectionUploadResult, CreateCollectionRequest, RagCorpus, RagResult, RagSearchRequest,
     RagSearchResponse, SurrealRagProvider, SurrealRagProviderInfo, SurrealRagProvidersResponse,
     SurrealRagResult, SurrealRagSearchRequest, SurrealRagSearchResponse,
-};
-
-// Scraper types
-pub use scraper::{
-    ScrapeRequest, ScrapeResponse, ScrapeTarget, ScreenshotJobResponse, ScreenshotRequest,
-    ScreenshotResponse, ScreenshotResult, ScreenshotURL,
 };
 
 // Search types
